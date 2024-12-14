@@ -85,6 +85,9 @@ private:
 // Abstract class for network interface ( platform agnostic )
 class NetworkInterface {
 public:
+  static constexpr size_t MAX_PACKET_SIZE = 2048;
+
+public:
   virtual ~NetworkInterface() = default;
   virtual bool createSocket(const std::string &bindAddress, int port) = 0;
   virtual bool bindSocket() = 0;

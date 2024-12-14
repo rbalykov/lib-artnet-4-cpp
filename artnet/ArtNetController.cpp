@@ -148,30 +148,34 @@ void ArtNetController::registerDataCallback(DataCallback callback) {
   m_dataCallback = callback;
 }
 
-bool ArtNetController::prepareArtDmxPacket([[maybe_unused]] uint16_t universe,
+bool ArtNetController::prepareArtDmxPacket(uint16_t universe,
                                            const uint8_t *data, size_t length,
                                            std::vector<uint8_t> &packet) {
   ArtDmxPacket dmxPacket;
+    
+    // Header
+    dmxPacket.header = ArtHeader(OpCode::OpDmx);
 
-  // Header
-  dmxPacket.header = ArtHeader(OpCode::OpDmx);
+    // Packet Specific Data
+    dmxPacket.sequence = static_cast<uint8_t>(m_seqNumber++);
+    dmxPacket.physical = 0;
+    uint8_t net = m_net & 0x7F;
+    uint8_t subnet = m_subnet & 0xF;
+    uint8_t uni = m_universe & 0xF;
+    dmxPacket.universe = static_cast<uint16_t>((net << 12) | (subnet << 8) | uni);
+    dmxPacket.length = static_cast<uint16_t>(length);
 
-  // Packet Specific Data
-  dmxPacket.sequence = static_cast<uint8_t>(m_seqNumber++);
-  dmxPacket.physical = 0;
-  uint8_t net = m_net & 0x7F;
-  uint8_t subnet = m_subnet & 0xF;
-  uint8_t uni = m_universe & 0xF;
-  dmxPacket.universe = static_cast<uint16_t>((net << 12) | (subnet << 8) | uni);
-  dmxPacket.length = static_cast<uint16_t>(length);
 
-  std::memcpy(dmxPacket.data.data(), data, length);
-
+  if (length > ARTNET_MAX_DMX_SIZE) {
+      std::cerr << "ArtNet: DMX data exceeds max size" << std::endl;
+      return false;
+  }
+    
   packet.resize(ARTNET_HEADER_SIZE + 4 + length);
-
   // copy the struct to the output vector
-  std::memcpy(packet.data(), &dmxPacket, ARTNET_HEADER_SIZE + 4 + length);
-
+    std::memcpy(packet.data(), &dmxPacket, ARTNET_HEADER_SIZE + 4);
+    std::memcpy(packet.data()+ ARTNET_HEADER_SIZE + 4, data, length);
+    std::cout << "ArtNet: prepareArtDmxPacket, packet.size: " << packet.size() << std::endl;
   return true;
 }
 
@@ -191,6 +195,7 @@ bool ArtNetController::sendPacket(const std::vector<uint8_t> &packet) {
               << std::endl;
     return false;
   }
+    std::cout << "ArtNet: sendPacket, packet.size: " << packet.size() << std::endl;
 
   if (!m_networkInterface->sendPacket(packet, m_broadcastAddress, m_port)) {
     std::cerr << "ArtNet: Error sending packet" << std::endl;
@@ -206,6 +211,7 @@ void ArtNetController::receivePackets() {
 
   while (m_isRunning) {
     int bytesReceived = m_networkInterface->receivePacket(buffer);
+      std::cout << "ArtNet: receivePackets, bytesReceived: " << bytesReceived << "buffer.size: " << buffer.size() <<  std::endl;
     if (bytesReceived > 0) {
       std::cout << "ArtNet: Received " << bytesReceived << " bytes."
                 << std::endl;

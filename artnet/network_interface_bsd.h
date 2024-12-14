@@ -2,11 +2,12 @@
 
 #include "ArtNetController.h"
 #include <string>
+#include <vector>
 
 namespace ArtNet {
 class NetworkInterfaceBSD : public NetworkInterface {
 public:
-  NetworkInterfaceBSD() = default;
+  NetworkInterfaceBSD();
   ~NetworkInterfaceBSD() override = default;
 
   bool createSocket(const std::string &bindAddress, int port) override;
@@ -20,5 +21,6 @@ private:
   int m_socket = -1;
   std::string m_bindAddress;
   int m_port;
+  std::vector<uint8_t> m_recvBuffer;
 };
 } // namespace ArtNet
