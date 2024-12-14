@@ -1,0 +1,2 @@
+CompileFlags:
+  add: [-std=c++17, -pthread]
