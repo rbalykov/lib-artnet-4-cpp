@@ -207,30 +207,18 @@ void ArtNetController::receivePackets() {
   while (m_isRunning) {
     int bytesReceived = m_networkInterface->receivePacket(buffer);
     if (bytesReceived > 0) {
-      std::cout << "ArtNet: Received " << bytesReceived << " bytes."
-                << std::endl;
-      if (bytesReceived > 0 &&
-          static_cast<size_t>(bytesReceived) <= buffer.size()) {
-        handleArtPacket(buffer.data(), static_cast<int>(bytesReceived));
-      } else {
-        std::cerr << "ArtNet: Invalid bytesReceived value, ignoring packet"
-                  << std::endl;
-      }
+      handleArtPacket(buffer.data(), static_cast<int>(bytesReceived));
     }
-
     // Add a small delay
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
 
 void ArtNetController::handleArtPacket(const uint8_t *buffer, int size) {
-  if (size < ARTNET_HEADER_SIZE) {
+  if (size < ARTNET_HEADER_SIZE)
     return; // Ignore invalid packets
-  }
 
-  std::cout << "ArtNetController: handleArtPacket" << std::endl;
-
-  ArtHeader header(OpCode::OpPoll); // Dummy OpCode, it will be overwritten.
+  ArtHeader header;
   std::memcpy(&header, buffer, ARTNET_HEADER_SIZE);
 
   // validate id (should be always "Art-Net")
@@ -239,7 +227,7 @@ void ArtNetController::handleArtPacket(const uint8_t *buffer, int size) {
     return;
   }
 
-  uint16_t opcode = ntohs(header.opcode);
+  uint16_t opcode = (header.opcode);
 
   if (opcode == static_cast<uint16_t>(OpCode::OpDmx)) {
     handleArtDmx(buffer, size);

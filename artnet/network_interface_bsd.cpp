@@ -87,12 +87,14 @@ int NetworkInterfaceBSD::receivePacket(std::vector<uint8_t> &buffer) {
                reinterpret_cast<sockaddr *>(&senderAddr), &addrLen);
   if (bytesReceived == -1) {
     if (errno != EAGAIN && errno != EWOULDBLOCK) {
-      std::cerr << "ArtNet: Error receiving data: " << strerror(errno)
+      std::cerr << "ArtNet (BSD): Error receiving data: " << strerror(errno)
                 << std::endl;
     }
-
     return 0; // Non-blocking socket returns 0 if no data
   }
+
+  std::cout << "ArtNet (BSD): bytes received: " << bytesReceived << std::endl;
+
   return static_cast<int>(bytesReceived);
 }
 

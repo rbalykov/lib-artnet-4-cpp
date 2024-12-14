@@ -163,6 +163,13 @@ struct ArtTodDataPacket {
   uint8_t uidCount;
   std::array<uint8_t, 48 * 32> tod;
 
-  ArtTodDataPacket();
+  ArtTodDataPacket()
+      : header(OpCode::OpTodData), rdmVer(0), port(0), spare1(0), spare2(0),
+        spare3(0), spare4(0), spare5(0), spare6(0), net(0), command(0),
+        addCount(0), uidTotalHi(0), uidTotalLo(0), blockCount(0), uidCount(0) {
+    address.fill(0);
+    tod.fill(0);
+  }
 };
+
 } // namespace ArtNet
