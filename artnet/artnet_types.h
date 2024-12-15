@@ -10,6 +10,7 @@ namespace ArtNet {
 
 // Constants
 constexpr uint16_t ARTNET_PORT = 6454;
+constexpr uint16_t ARTNET_FPS = 44;
 constexpr uint16_t ARTNET_HEADER_SIZE = 12;
 constexpr uint16_t ARTNET_MAX_DMX_SIZE = 512;
 

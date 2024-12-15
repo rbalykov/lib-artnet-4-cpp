@@ -1,9 +1,9 @@
 #include "ArtNetController.h"
 #include "artnet_types.h"
+#include "logging.h"
+#include "utils.h"
+
 #include <cstring>
-#include <iostream>
-// #include <stdexcept>
-// #include <system_error>
 #include <thread>
 
 #ifdef __APPLE__
@@ -15,21 +15,20 @@
 namespace ArtNet {
 
 ArtNetController::ArtNetController()
-    : m_port(ARTNET_PORT), m_net(0), m_subnet(0), m_universe(0),
-      m_isRunning(false), m_seqNumber(0), m_dataCallback(nullptr),
-      m_isConfigured(false),
-      m_frameInterval(std::chrono::microseconds(33333)) // ~30fps default
-{}
+    : m_port(ARTNET_PORT), m_net(0), m_subnet(0), m_universe(0), m_isRunning(false), m_seqNumber(0), m_dataCallback(nullptr),
+      m_isConfigured(false), m_frameInterval(std::chrono::microseconds(1000000 / ARTNET_FPS)) {}
 
 ArtNetController::~ArtNetController() { stop(); }
 
-bool ArtNetController::configure(const std::string &bindAddress, int port,
-                                 uint8_t net, uint8_t subnet, uint8_t universe,
+bool ArtNetController::configure(const std::string &bindAddress, int port, uint8_t net, uint8_t subnet, uint8_t universe,
                                  const std::string &broadcastAddress) {
   if (isRunning()) {
-    std::cerr << "ArtNet: Cannot configure while running." << std::endl;
+    Logger::error("Cannot configure while running");
     return false;
   }
+
+  Logger::debug("Configuring controller: ", "bind=", bindAddress, " port=", port, " net=", static_cast<int>(net),
+                " subnet=", static_cast<int>(subnet), " universe=", static_cast<int>(universe), " broadcast=", broadcastAddress);
 
   // Store configuration
   m_bindAddress = bindAddress;
@@ -37,21 +36,21 @@ bool ArtNetController::configure(const std::string &bindAddress, int port,
   m_net = net;
   m_subnet = subnet;
   m_universe = universe;
-  m_broadcastAddress =
-      broadcastAddress.empty() ? "255.255.255.255" : broadcastAddress;
+  m_broadcastAddress = broadcastAddress.empty() ? "255.255.255.255" : broadcastAddress;
   m_isConfigured = true;
+
+  Logger::info("Controller configured successfully");
 
   return true;
 }
 
 bool ArtNetController::start() {
   if (!m_isConfigured) {
-    std::cerr << "ArtNet: Controller not configured, call configure() first"
-              << std::endl;
+    Logger::error("Controller not configured, call configure() first");
     return false;
   }
   if (m_isRunning) {
-    std::cerr << "ArtNet: Already running" << std::endl;
+    Logger::error("Already running");
     return false;
   }
 
@@ -92,6 +91,11 @@ bool ArtNetController::start(FrameGenerator generator, int fps) {
 
 void ArtNetController::startFrameProcessor() {
   m_processorThread = std::thread([this]() {
+    // Set high priority for this thread
+    if (!utils::setThreadPriority(utils::ThreadPriority::HIGH)) {
+      Logger::info("Failed to set high priority for frame processor thread. Try running with sudo or setting capability.");
+    }
+
     auto nextFrame = std::chrono::steady_clock::now();
 
     while (m_isRunning) {
@@ -113,8 +117,7 @@ void ArtNetController::startFrameProcessor() {
             m_stats.queueDepth = m_frameQueue.size();
           }
         } catch (const std::exception &e) {
-          std::cerr << "ArtNet: Frame generator error: " << e.what()
-                    << std::endl;
+          Logger::error("Frame generator error: ", e.what());
         }
       }
 
@@ -139,9 +142,7 @@ void ArtNetController::startFrameProcessor() {
 
       // Calculate timing for next frame
       auto frameEnd = std::chrono::steady_clock::now();
-      m_stats.lastFrameTime =
-          std::chrono::duration_cast<std::chrono::microseconds>(frameEnd -
-                                                                frameStart);
+      m_stats.lastFrameTime = std::chrono::duration_cast<std::chrono::microseconds>(frameEnd - frameStart);
 
       // Sleep until next frame
       nextFrame += m_frameInterval;
@@ -150,6 +151,14 @@ void ArtNetController::startFrameProcessor() {
       }
     }
   });
+
+// Optionally set CPU affinity to bind the thread to a specific core
+#ifdef __linux__
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(0, &cpuset); // Bind to first CPU core
+  pthread_setaffinity_np(m_processorThread.native_handle(), sizeof(cpu_set_t), &cpuset);
+#endif
 }
 
 void ArtNetController::stop() {
@@ -172,10 +181,9 @@ void ArtNetController::stop() {
 
 bool ArtNetController::isRunning() const { return m_isRunning; }
 
-bool ArtNetController::setDmxData(uint16_t universe,
-                                  const std::vector<uint8_t> &data) {
+bool ArtNetController::setDmxData(uint16_t universe, const std::vector<uint8_t> &data) {
   if (data.size() > ARTNET_MAX_DMX_SIZE) {
-    std::cerr << "ArtNet: DMX data exceeds max size" << std::endl;
+    Logger::error("DMX data exceeds max size");
     return false;
   }
   if (universe != m_universe) {
@@ -187,8 +195,7 @@ bool ArtNetController::setDmxData(uint16_t universe,
   return true;
 }
 
-bool ArtNetController::setDmxData(uint16_t universe, const uint8_t *data,
-                                  size_t length) {
+bool ArtNetController::setDmxData(uint16_t universe, const uint8_t *data, size_t length) {
   if (length > ARTNET_MAX_DMX_SIZE) {
     std::cerr << "ArtNet: DMX data exceeds max size" << std::endl;
     return false;
@@ -217,8 +224,7 @@ bool ArtNetController::sendDmx() {
     if (m_dmxData.empty())
       return false;
 
-    if (!prepareArtDmxPacket(m_universe, m_dmxData.data(), m_dmxData.size(),
-                             packet))
+    if (!prepareArtDmxPacket(m_universe, m_dmxData.data(), m_dmxData.size(), packet))
       return false;
   }
 
@@ -244,12 +250,9 @@ void ArtNetController::registerDataCallback(DataCallback callback) {
   m_enableReceiving = static_cast<bool>(callback);
 }
 
-bool ArtNetController::prepareArtDmxPacket(uint16_t universe,
-                                           const uint8_t *data, size_t length,
-                                           std::vector<uint8_t> &packet) {
+bool ArtNetController::prepareArtDmxPacket(uint16_t universe, const uint8_t *data, size_t length, std::vector<uint8_t> &packet) {
   if (length > ARTNET_MAX_DMX_SIZE) {
-    std::cerr << "ArtNet: DMX data exceeds maximum size ("
-              << ARTNET_MAX_DMX_SIZE << " bytes)." << std::endl;
+    Logger::error("DMX data exceeds maximum size (", ARTNET_MAX_DMX_SIZE, " bytes)");
     return false;
   }
 
@@ -299,40 +302,32 @@ bool ArtNetController::prepareArtPollPacket(std::vector<uint8_t> &packet) {
 
 bool ArtNetController::sendPacket(const std::vector<uint8_t> &packet) {
   if (!m_isRunning || !m_networkInterface) {
-    std::cerr << "ArtNet: Not Running or Interface not initialized"
-              << std::endl;
+    Logger::error("Not Running or Interface not initialized");
     return false;
   }
-  std::cout << "ArtNet: sendPacket, packet.size: " << packet.size()
-            << std::endl;
+  Logger::debug("sendPacket, packet.size: ", packet.size());
 
   if (!m_networkInterface->sendPacket(packet, m_broadcastAddress, m_port)) {
-    std::cerr << "ArtNet: Error sending packet" << std::endl;
+    Logger::error("Error sending packet");
     return false;
   }
   return true;
 }
 
 void ArtNetController::receivePackets() {
-  std::cout << "ArtNet: receivePackets thread started. bind address: "
-            << m_bindAddress << " port: " << m_port << std::endl;
-  std::vector<uint8_t> buffer(
-      NetworkInterface::MAX_PACKET_SIZE); // Large buffer for incoming
-                                          // packets.
+  Logger::info("receivePackets thread started. bind address: ", m_bindAddress, " port: ", m_port);
+  std::vector<uint8_t> buffer(NetworkInterface::MAX_PACKET_SIZE); // Large buffer for incoming
+                                                                  // packets.
 
   while (m_isRunning) {
     int bytesReceived = m_networkInterface->receivePacket(buffer);
-    std::cout << "ArtNet: receivePackets, bytesReceived: " << bytesReceived
-              << "buffer.size: " << buffer.size() << std::endl;
+    Logger::debug("receivePackets, bytesReceived: ", bytesReceived, " buffer.size: ", buffer.size());
     if (bytesReceived > 0) {
-      std::cout << "ArtNet: Received " << bytesReceived << " bytes."
-                << std::endl;
-      if (bytesReceived > 0 &&
-          static_cast<size_t>(bytesReceived) <= buffer.size()) {
+      Logger::debug("Received ", bytesReceived, " bytes");
+      if (bytesReceived > 0 && static_cast<size_t>(bytesReceived) <= buffer.size()) {
         handleArtPacket(buffer.data(), static_cast<int>(bytesReceived));
       } else {
-        std::cerr << "ArtNet: Invalid bytesReceived value, ignoring packet"
-                  << std::endl;
+        Logger::error("Invalid bytesReceived value, ignoring packet");
       }
     }
 
@@ -346,14 +341,13 @@ void ArtNetController::handleArtPacket(const uint8_t *buffer, int size) {
     return; // Ignore invalid packets
   }
 
-  std::cout << "ArtNetController: handleArtPacket" << std::endl;
+  Logger::debug("handleArtPacket");
 
   ArtHeader header(OpCode::OpPoll); // Dummy OpCode, it will be overwritten.
   std::memcpy(&header, buffer, ARTNET_HEADER_SIZE);
 
   // validate id (should be always "Art-Net")
-  if (std::strncmp(reinterpret_cast<const char *>(header.id.data()), "Art-Net",
-                   8) != 0) {
+  if (std::strncmp(reinterpret_cast<const char *>(header.id.data()), "Art-Net", 8) != 0) {
     return;
   }
 
@@ -374,13 +368,10 @@ void ArtNetController::handleArtDmx(const uint8_t *buffer, int size) {
     return;
 
   // Interpret buffer as an ArtDmxPacket
-  const ArtDmxPacket *dmxPacket =
-      reinterpret_cast<const ArtDmxPacket *>(buffer);
+  const ArtDmxPacket *dmxPacket = reinterpret_cast<const ArtDmxPacket *>(buffer);
 
-  uint16_t packetUniverse =
-      ntohs(dmxPacket->universe); // Convert from network byte order
-  uint16_t dmxLength =
-      ntohs(dmxPacket->length); // Convert from network byte order
+  uint16_t packetUniverse = ntohs(dmxPacket->universe); // Convert from network byte order
+  uint16_t dmxLength = ntohs(dmxPacket->length);        // Convert from network byte order
   uint8_t net = (packetUniverse >> 12) & 0x7F;
   uint8_t subnet = (packetUniverse >> 8) & 0xF;
   uint8_t uni = packetUniverse & 0xF;
@@ -397,12 +388,11 @@ void ArtNetController::handleArtDmx(const uint8_t *buffer, int size) {
   }
 }
 
-void ArtNetController::handleArtPoll([[maybe_unused]] const uint8_t *buffer,
-                                     int size) {
+void ArtNetController::handleArtPoll([[maybe_unused]] const uint8_t *buffer, int size) {
   if (size < static_cast<int>(sizeof(ArtPollPacket)))
     return;
 
-  std::cout << "ArtNet: Recieved Poll Packet" << std::endl;
+  Logger::debug("Received Poll Packet");
   sendPoll();
 }
 
@@ -410,13 +400,9 @@ void ArtNetController::handleArtPollReply(const uint8_t *buffer, int size) {
   if (size < static_cast<int>(sizeof(ArtPollReplyPacket)))
     return;
 
-  const ArtPollReplyPacket *pollReplyPacket =
-      reinterpret_cast<const ArtPollReplyPacket *>(buffer);
-  std::cout << "ArtNet: Received Poll Reply packet from: "
-            << static_cast<int>(pollReplyPacket->ip[0]) << "."
-            << static_cast<int>(pollReplyPacket->ip[1]) << "."
-            << static_cast<int>(pollReplyPacket->ip[2]) << "."
-            << static_cast<int>(pollReplyPacket->ip[3]) << ":"
-            << (pollReplyPacket->port) << std::endl;
+  const ArtPollReplyPacket *pollReplyPacket = reinterpret_cast<const ArtPollReplyPacket *>(buffer);
+  Logger::debug("Received Poll Reply packet from: ", static_cast<int>(pollReplyPacket->ip[0]), ".",
+                static_cast<int>(pollReplyPacket->ip[1]), ".", static_cast<int>(pollReplyPacket->ip[2]), ".",
+                static_cast<int>(pollReplyPacket->ip[3]), ":", pollReplyPacket->port);
 }
 } // namespace ArtNet

@@ -1,2 +1,3 @@
 CompileFlags:
   add: [-std=c++17, -pthread]
+  CompilationDatabase: build/       # Search build/ directory for compile_commands.json
