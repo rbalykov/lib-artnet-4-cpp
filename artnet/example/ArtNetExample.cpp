@@ -1,25 +1,22 @@
 #include "../ArtNetController.h"
 
 #include <chrono>
-#include <iomanip> //  Include this header for std::setw
+#include <csignal>
+#include <iomanip>
 #include <iostream>
-#include <random> // For generating random values
+#include <random>
 #include <thread>
 #include <vector>
 
-// void mydatacallback(uint16_t universe, const uint8_t *data, uint16_t length);
-//
-// void mydatacallback(uint16_t universe, const uint8_t *data, uint16_t length)
-// {
-//   std::cout << "received dmx data on universe: " << universe
-//             << ", length: " << length << ", data: ";
-//   for (int i = 0; i < length; ++i) {
-//     std::cout << static_cast<int>(data[i]) << " ";
-//   }
-//   std::cout << std::endl;
-// }
+// Global signal handler for clean shutdown
+static volatile bool running = true;
+static void signalHandler(int) { running = false; }
 
 int main() {
+  // Setup signal handling for clean exit
+  signal(SIGINT, signalHandler);  // Handle Ctrl+C
+  signal(SIGTERM, signalHandler); // Handle termination request
+
   ArtNet::ArtNetController controller;
 
   // Configure the controller
@@ -29,24 +26,18 @@ int main() {
     return 1;
   }
 
-  if (!controller.start()) {
-    std::cerr << "artnet: start error" << std::endl;
-    return 1;
-  }
-
-  // Initialize DMX data
-  std::vector<uint8_t> dmxData(512);
-
   // Random number generation setup
   std::random_device rd;
-  std::mt19937 gen(rd()); // Mersenne Twister random number generator
-  std::uniform_int_distribution<> dis(
-      0, 255); // Generate numbers in range [0, 255]
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis(0, 255);
 
-  while (controller.isRunning()) {
-    // Populate DMX data with random values for all channels
-    for (size_t i = 0; i < 512; i++) {
-      dmxData[i] = static_cast<uint8_t>(dis(gen)); // Assign random value
+  // Create our frame generator function
+  auto frameGenerator = [&]() -> std::vector<uint8_t> {
+    std::vector<uint8_t> dmxData(512);
+
+    // Populate DMX data with random values
+    for (size_t i = 0; i < dmxData.size(); i++) {
+      dmxData[i] = static_cast<uint8_t>(dis(gen));
     }
 
     // Log DMX values in a formatted way
@@ -61,17 +52,32 @@ int main() {
     }
     std::cout << "..." << std::endl;
 
-    // Set the DMX data for universe 0
-    controller.setDmxData(0, dmxData);
+    return dmxData;
+  };
 
-    // Send the DMX data
-    if (!controller.sendDmx()) {
-      std::cout << "artnet: send error" << std::endl;
-    }
-
-    // Maintain a ~30 FPS update rate
-    std::this_thread::sleep_for(std::chrono::milliseconds(33));
+  // Start the controller with our frame generator at 30 FPS
+  if (!controller.start(frameGenerator, 30)) {
+    std::cerr << "artnet: start error" << std::endl;
+    return 1;
   }
+
+  std::cout << "ArtNet controller running at 30 FPS. Press Ctrl+C to exit."
+            << std::endl;
+
+  // Main loop - just monitor statistics until shutdown requested
+  while (running) {
+    auto stats = controller.getStatistics(); // Now gets a Snapshot
+    std::cout << "\rFrames: " << stats.totalFrames
+              << " | Queue: " << stats.queueDepth
+              << " | Dropped: " << stats.droppedFrames
+              << " | Frame time: " << stats.lastFrameTime.count() << "µs"
+              << std::flush;
+
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+
+  std::cout << "\nShutting down..." << std::endl;
+  controller.stop();
 
   return 0;
 }

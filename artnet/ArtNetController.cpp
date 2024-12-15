@@ -17,7 +17,9 @@ namespace ArtNet {
 ArtNetController::ArtNetController()
     : m_port(ARTNET_PORT), m_net(0), m_subnet(0), m_universe(0),
       m_isRunning(false), m_seqNumber(0), m_dataCallback(nullptr),
-      m_isConfigured(false) {}
+      m_isConfigured(false),
+      m_frameInterval(std::chrono::microseconds(33333)) // ~30fps default
+{}
 
 ArtNetController::~ArtNetController() { stop(); }
 
@@ -77,12 +79,93 @@ bool ArtNetController::start() {
   return true;
 }
 
-void ArtNetController::stop() {
-  if (m_isRunning) {
-    m_isRunning = false;
-    if (m_receiveThread.joinable()) {
-      m_receiveThread.join();
+// New start method with frame generator
+bool ArtNetController::start(FrameGenerator generator, int fps) {
+  if (!start())
+    return false;
+
+  m_frameGenerator = std::move(generator);
+  m_frameInterval = std::chrono::microseconds(1000000 / fps);
+  startFrameProcessor();
+  return true;
+}
+
+void ArtNetController::startFrameProcessor() {
+  m_processorThread = std::thread([this]() {
+    auto nextFrame = std::chrono::steady_clock::now();
+
+    while (m_isRunning) {
+      auto frameStart = std::chrono::steady_clock::now();
+
+      // Generate new frame
+      if (m_frameGenerator) {
+        try {
+          auto dmxData = m_frameGenerator();
+
+          // Lock only for queue operations
+          {
+            std::lock_guard<std::mutex> lock(m_queueMutex);
+            if (m_frameQueue.size() >= MAX_QUEUE_SIZE) {
+              m_stats.droppedFrames++;
+              m_frameQueue.pop();
+            }
+            m_frameQueue.push(std::move(dmxData));
+            m_stats.queueDepth = m_frameQueue.size();
+          }
+        } catch (const std::exception &e) {
+          std::cerr << "ArtNet: Frame generator error: " << e.what()
+                    << std::endl;
+        }
+      }
+
+      // Process queue
+      std::vector<uint8_t> frame;
+      {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        if (!m_frameQueue.empty()) {
+          frame = std::move(m_frameQueue.front());
+          m_frameQueue.pop();
+          m_stats.queueDepth = m_frameQueue.size();
+        }
+      }
+
+      // Send frame if available
+      if (!frame.empty()) {
+        setDmxData(m_universe, frame);
+        if (sendDmx()) {
+          m_stats.totalFrames++;
+        }
+      }
+
+      // Calculate timing for next frame
+      auto frameEnd = std::chrono::steady_clock::now();
+      m_stats.lastFrameTime =
+          std::chrono::duration_cast<std::chrono::microseconds>(frameEnd -
+                                                                frameStart);
+
+      // Sleep until next frame
+      nextFrame += m_frameInterval;
+      if (frameEnd < nextFrame) {
+        std::this_thread::sleep_until(nextFrame);
+      }
     }
+  });
+}
+
+void ArtNetController::stop() {
+  m_isRunning = false;
+
+  // Stop frame processor thread
+  if (m_processorThread.joinable()) {
+    m_processorThread.join();
+  }
+
+  // Stop receive thread
+  if (m_receiveThread.joinable()) {
+    m_receiveThread.join();
+  }
+
+  if (m_networkInterface) {
     m_networkInterface->closeSocket();
   }
 }
@@ -234,7 +317,8 @@ void ArtNetController::receivePackets() {
   std::cout << "ArtNet: receivePackets thread started. bind address: "
             << m_bindAddress << " port: " << m_port << std::endl;
   std::vector<uint8_t> buffer(
-      NetworkInterface::MAX_PACKET_SIZE); // Large buffer for incoming packets.
+      NetworkInterface::MAX_PACKET_SIZE); // Large buffer for incoming
+                                          // packets.
 
   while (m_isRunning) {
     int bytesReceived = m_networkInterface->receivePacket(buffer);

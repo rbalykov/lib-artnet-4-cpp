@@ -1,25 +1,50 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "NetworkInterface.h"
 #include "artnet_types.h"
 
-namespace ArtNet {
-
 // forward declaration
-class NetworkInterface;
+// class NetworkInterface;
+
+namespace ArtNet {
 
 class ArtNetController {
 public:
   // Data Handling
   using DataCallback = std::function<void(
       uint16_t universe, const uint8_t *data, uint16_t length)>;
+  using FrameGenerator = std::function<std::vector<uint8_t>()>;
+
+  // Statistics structure for monitoring
+  struct Statistics {
+    std::atomic<uint64_t> totalFrames{0};
+    std::atomic<uint64_t> droppedFrames{0};
+    std::atomic<size_t> queueDepth{0};
+    std::chrono::microseconds lastFrameTime{0};
+
+    struct Snapshot {
+      uint64_t totalFrames;
+      uint64_t droppedFrames;
+      size_t queueDepth;
+      std::chrono::microseconds lastFrameTime;
+    };
+
+    Snapshot getSnapshot() const {
+      return Snapshot{totalFrames.load(), droppedFrames.load(),
+                      queueDepth.load(), lastFrameTime};
+    }
+  };
 
   ArtNetController();
   ~ArtNetController();
@@ -31,13 +56,14 @@ public:
 
   // Networking
   bool start();
+  bool start(FrameGenerator generator, int fps = 30);
   void stop();
   bool isRunning() const;
 
   // Data Management
   bool setDmxData(uint16_t universe, const std::vector<uint8_t> &data);
   bool setDmxData(uint16_t universe, const uint8_t *data, size_t length);
-  std::vector<uint8_t> getDmxData(uint16_t universe); // Added getDmxData
+  std::vector<uint8_t> getDmxData(uint16_t universe);
 
   // Sending
   bool sendDmx();
@@ -46,11 +72,17 @@ public:
   // Receiving
   void registerDataCallback(DataCallback callback);
 
+  // Statistics
+  // const Statistics &getStatistics() const { return m_stats; }
+  Statistics::Snapshot getStatistics() const { return m_stats.getSnapshot(); }
+
 private:
+  void startFrameProcessor();
+
   // Network Related
   std::unique_ptr<NetworkInterface> m_networkInterface;
 
-  // --- Art-Net Parameters ---
+  // Art-Net Parameters
   std::string m_bindAddress;
   int m_port;
   std::string m_broadcastAddress;
@@ -59,17 +91,26 @@ private:
   uint8_t m_subnet;
   uint8_t m_universe;
 
-  // --- Internal State ---
+  // Internal State
+  static constexpr size_t MAX_QUEUE_SIZE = 4;
   bool m_isRunning = false;
   bool m_isConfigured = false;
-  bool m_enableReceiving = false; // Default: disabled
+  bool m_enableReceiving = false;
   std::thread m_receiveThread;
   std::mutex m_dataMutex;
-  std::vector<uint8_t> m_dmxData; // This will be removed in future steps
+  std::vector<uint8_t> m_dmxData;
   uint16_t m_seqNumber;
   DataCallback m_dataCallback;
 
-  // --- Core Logic ---
+  // Frame Processing
+  std::queue<std::vector<uint8_t>> m_frameQueue;
+  std::mutex m_queueMutex;
+  std::thread m_processorThread;
+  std::chrono::microseconds m_frameInterval;
+  FrameGenerator m_frameGenerator;
+  Statistics m_stats;
+
+  // Core Logic
   bool prepareArtDmxPacket(uint16_t universe, const uint8_t *data,
                            size_t length, std::vector<uint8_t> &packet);
   bool prepareArtPollPacket(std::vector<uint8_t> &packet);
@@ -80,21 +121,6 @@ private:
   void handleArtDmx(const uint8_t *buffer, int size);
   void handleArtPoll(const uint8_t *buffer, int size);
   void handleArtPollReply(const uint8_t *buffer, int size);
-};
-
-// Abstract class for network interface ( platform agnostic )
-class NetworkInterface {
-public:
-  static constexpr size_t MAX_PACKET_SIZE = 2048;
-
-public:
-  virtual ~NetworkInterface() = default;
-  virtual bool createSocket(const std::string &bindAddress, int port) = 0;
-  virtual bool bindSocket() = 0;
-  virtual bool sendPacket(const std::vector<uint8_t> &packet,
-                          const std::string &address, int port) = 0;
-  virtual int receivePacket(std::vector<uint8_t> &buffer) = 0;
-  virtual void closeSocket() = 0;
 };
 
 } // namespace ArtNet
