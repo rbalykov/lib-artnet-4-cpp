@@ -57,25 +57,30 @@ enum class OpCode : uint16_t {
 
 // Common Header
 struct ArtHeader {
-  std::array<uint8_t, 8> id; // "Art-Net" + null terminator
-  uint16_t opcode;           // Low byte first
-  uint16_t version;          // Low byte first
+  std::array<uint8_t, 8> id; // "Art-Net\0"
+  uint16_t opcode;           // OpDmx = 0x5000, low byte first
+  uint16_t version;          // Protocol version, high byte first
 
-  ArtHeader(OpCode code) {
-    std::copy(std::begin(std::string("Art-Net")),
-              std::end(std::string("Art-Net")), id.begin());
-    id[7] = 0;
+  explicit ArtHeader(OpCode code) {
+    // Initialize with "Art-Net\0"
+    const char *artnet_id = "Art-Net";
+    std::memset(id.data(), 0, id.size());
+    std::memcpy(id.data(), artnet_id, std::strlen(artnet_id));
+
+    // Set initial values
     setOpcode(code);
-    setVersion(14); // Assuming Art-Net version 14, will be re-visited on the
-                    // sending function.
+    setVersion(14); // Art-Net protocol version 14
   }
-  ArtHeader(const ArtHeader &other) = default;
-  ArtHeader(ArtHeader &&other) = default;
-  ArtHeader &operator=(const ArtHeader &other) = default;
 
-  void setOpcode(OpCode code) { opcode = htons(static_cast<uint16_t>(code)); }
+  void setOpcode(OpCode code) {
+    // OpCode must be little-endian per spec
+    opcode = static_cast<uint16_t>(code); // Already in little-endian on x86/ARM
+  }
 
-  void setVersion(uint16_t versionNumber) { version = htons(versionNumber); }
+  void setVersion(uint16_t versionNumber) {
+    // Version must be big-endian per spec
+    version = htons(versionNumber);
+  }
 };
 
 // ArtPoll Packet (from spec section 6.2)

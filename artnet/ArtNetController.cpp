@@ -170,42 +170,37 @@ bool ArtNetController::prepareArtDmxPacket(uint16_t universe,
     return false;
   }
 
-  ArtDmxPacket dmxPacket;
+  // Calculate total packet size:
+  // ID(8) + OpCode(2) + ProtVer(2) + Sequence(1) + Physical(1) + SubUni(1) +
+  // Net(1) + Length(2) + Data
+  size_t packetSize = 18 + length;
+  packet.resize(packetSize, 0); // Initialize with zeros
 
-  // -- Construct the ArtDmxPacket --
+  // 1. Setup Header
+  ArtHeader header(OpCode::OpDmx); // This is 0x5000
+  std::memcpy(packet.data(), &header, sizeof(ArtHeader));
+  size_t offset = sizeof(ArtHeader);
 
-  // 1. Populate the ArtHeader (OpCode is already set to ArtDmx on the
-  // constructor)
-  dmxPacket.header.setVersion(
-      14); //  Art-Net version 14 (or 0x000E as specified on the spec)
+  // 2. Sequence number
+  packet[offset++] = static_cast<uint8_t>(m_seqNumber++ & 0xFF);
 
-  // 2. Packet-Specific Data
-  dmxPacket.sequence =
-      static_cast<uint8_t>(m_seqNumber++); // Increment sequence
-  dmxPacket.physical = 0;                  // Set physical port to 0 for now
+  // 3. Physical
+  packet[offset++] = 0;
 
-  // Universe, combining Net, SubNet, and Universe
-  uint8_t net = (m_net & 0x7F);      // Extract 7-bit Net
-  uint8_t subnet = (m_subnet & 0xF); // Extract 4-bit SubNet
-  uint8_t uni = (m_universe & 0xF);  // Extract 4-bit Universe
+  // 4. SubUni (low byte of 15-bit Port-Address)
+  packet[offset++] = (m_subnet << 4) | (m_universe & 0x0F);
 
-  dmxPacket.universe = htons((uint16_t)((net << 12) | (subnet << 8) |
-                                        uni)); // Pack and convert to big-endian
-  dmxPacket.length =
-      htons(static_cast<uint16_t>(length)); // Convert length to big-endian
+  // 5. Net (high byte of 15-bit Port-Address)
+  packet[offset++] = m_net & 0x7F;
 
-  // 3. Copy DMX data
-  std::memcpy(dmxPacket.data, data, length);
+  // 6. Length in big-endian
+  uint16_t lengthBE = htons(static_cast<uint16_t>(length));
+  memcpy(packet.data() + offset, &lengthBE, sizeof(uint16_t));
+  offset += sizeof(uint16_t);
 
-  // -- Assemble the final packet --
-  size_t packetSize = 18 + length; // Calculate total packet size
-  packet.resize(packetSize);
+  // 7. DMX data
+  std::memcpy(packet.data() + offset, data, length);
 
-  // Copy the entire ArtDmxPacket to the output buffer (header plus data)
-  std::memcpy(packet.data(), &dmxPacket, packetSize);
-
-  std::cout << "ArtNet: prepareArtDmxPacket, packet.size: " << packet.size()
-            << std::endl;
   return true;
 }
 
