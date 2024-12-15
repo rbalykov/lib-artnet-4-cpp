@@ -172,40 +172,37 @@ bool ArtNetController::prepareArtDmxPacket(uint16_t universe,
 
   ArtDmxPacket dmxPacket;
 
-  // Header
-  // dmxPacket.header = ArtHeader(OpCode::OpDmx);
+  // -- Construct the ArtDmxPacket --
 
-  // Packet Specific Data
-  dmxPacket.sequence = static_cast<uint8_t>(m_seqNumber++);
-  dmxPacket.physical = 0;
-  // uint8_t net = m_net & 0x7F;
-  // uint8_t subnet = m_subnet & 0xF;
-  // uint8_t uni = m_universe & 0xF;
-  // dmxPacket.universe = static_cast<uint16_t>((net << 12) | (subnet << 8) |
-  // uni);
+  // 1. Populate the ArtHeader (OpCode is already set to ArtDmx on the
+  // constructor)
+  dmxPacket.header.setVersion(
+      14); //  Art-Net version 14 (or 0x000E as specified on the spec)
+
+  // 2. Packet-Specific Data
+  dmxPacket.sequence =
+      static_cast<uint8_t>(m_seqNumber++); // Increment sequence
+  dmxPacket.physical = 0;                  // Set physical port to 0 for now
+
+  // Universe, combining Net, SubNet, and Universe
   uint8_t net = (m_net & 0x7F);      // Extract 7-bit Net
   uint8_t subnet = (m_subnet & 0xF); // Extract 4-bit SubNet
   uint8_t uni = (m_universe & 0xF);  // Extract 4-bit Universe
-  dmxPacket.universe = htons((net << 8) | (subnet << 4) | uni);
-  dmxPacket.length = static_cast<uint16_t>(length);
 
-  if (length > ARTNET_MAX_DMX_SIZE) {
-    std::cerr << "ArtNet: DMX data exceeds max size" << std::endl;
-    return false;
-  }
+  dmxPacket.universe = htons((uint16_t)((net << 12) | (subnet << 8) |
+                                        uni)); // Pack and convert to big-endian
+  dmxPacket.length =
+      htons(static_cast<uint16_t>(length)); // Convert length to big-endian
 
-  size_t packetSize = 18 + length; // Header + DMX data
+  // 3. Copy DMX data
+  std::memcpy(dmxPacket.data, data, length);
+
+  // -- Assemble the final packet --
+  size_t packetSize = 18 + length; // Calculate total packet size
   packet.resize(packetSize);
 
-  // packet.resize(ARTNET_HEADER_SIZE + 4 + length);
-
-  // copy the struct to the output vector
-  // std::memcpy(packet.data(), &dmxPacket, ARTNET_HEADER_SIZE + 4);
-  // std::memcpy(packet.data() + ARTNET_HEADER_SIZE + 4, data, length);
-
-  // Copy header and DMX data
-  std::memcpy(packet.data(), &dmxPacket, 18);    // Copy fixed fields
-  std::memcpy(packet.data() + 18, data, length); // Copy DMX data
+  // Copy the entire ArtDmxPacket to the output buffer (header plus data)
+  std::memcpy(packet.data(), &dmxPacket, packetSize);
 
   std::cout << "ArtNet: prepareArtDmxPacket, packet.size: " << packet.size()
             << std::endl;

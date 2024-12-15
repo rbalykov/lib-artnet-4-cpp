@@ -137,20 +137,15 @@ struct ArtPollReplyPacket {
 // ArtDmx Packet (from spec section 7.2)
 #pragma pack(push, 1) // Ensure proper packing (if not already present)
 struct ArtDmxPacket {
-  char header[8];           // 'Art-Net\0'
-  uint16_t opcode;          // OpCode for ArtDMX
-  uint16_t protocolVersion; // Protocol version (14 for Art-Net 4)
-  uint8_t sequence;         // DMX sequence number
-  uint8_t physical;         // Physical port
-  uint16_t universe;        // Universe (network byte order)
-  uint16_t length;          // Data length (network byte order)
-  uint8_t data[512];        // DMX data (maximum 512 bytes)
+  ArtHeader header;
+  uint8_t sequence;  // DMX sequence number
+  uint8_t physical;  // Physical port
+  uint16_t universe; // Universe (network byte order)
+  uint16_t length;   // Data length (network byte order)
+  uint8_t data[512]; // DMX data (maximum 512 bytes)
 
   // Constructor to initialize the fields
-  ArtDmxPacket() {
-    std::memcpy(header, "Art-Net\0", 8); // Initialize header
-    opcode = htons(0x5000);              // OpCode for ArtDMX
-    protocolVersion = htons(14);         // Protocol version (14 for Art-Net 4)
+  ArtDmxPacket() : header(OpCode::OpDmx) {
     sequence = 0;
     physical = 0;
     universe = 0;
