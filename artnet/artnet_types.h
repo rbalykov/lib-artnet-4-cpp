@@ -1,5 +1,6 @@
 #pragma once
 
+#include <arpa/inet.h>
 #include <array>
 #include <cstdint>
 #include <string>
@@ -64,10 +65,17 @@ struct ArtHeader {
     std::copy(std::begin(std::string("Art-Net")),
               std::end(std::string("Art-Net")), id.begin());
     id[7] = 0;
-    opcode = static_cast<uint16_t>(code);
-    version = 14; // Assuming Art-Net version 14, will be re-visited on the
-                  // sending function.
+    setOpcode(code);
+    setVersion(14); // Assuming Art-Net version 14, will be re-visited on the
+                    // sending function.
   }
+  ArtHeader(const ArtHeader &other) = default;
+  ArtHeader(ArtHeader &&other) = default;
+  ArtHeader &operator=(const ArtHeader &other) = default;
+
+  void setOpcode(OpCode code) { opcode = htons(static_cast<uint16_t>(code)); }
+
+  void setVersion(uint16_t versionNumber) { version = htons(versionNumber); }
 };
 
 // ArtPoll Packet (from spec section 6.2)
@@ -127,22 +135,32 @@ struct ArtPollReplyPacket {
 };
 
 // ArtDmx Packet (from spec section 7.2)
+#pragma pack(push, 1) // Ensure proper packing (if not already present)
 struct ArtDmxPacket {
-  ArtHeader header;
-  uint8_t sequence;
-  uint8_t physical;
-  uint16_t universe;
-  uint16_t length;
-  std::array<uint8_t, ARTNET_MAX_DMX_SIZE> data;
-  ArtDmxPacket()
-      : header(OpCode::OpDmx), sequence(0), physical(0), universe(0),
-        length(0) {
-    data.fill(0);
+  char header[8];           // 'Art-Net\0'
+  uint16_t opcode;          // OpCode for ArtDMX
+  uint16_t protocolVersion; // Protocol version (14 for Art-Net 4)
+  uint8_t sequence;         // DMX sequence number
+  uint8_t physical;         // Physical port
+  uint16_t universe;        // Universe (network byte order)
+  uint16_t length;          // Data length (network byte order)
+  uint8_t data[512];        // DMX data (maximum 512 bytes)
+
+  // Constructor to initialize the fields
+  ArtDmxPacket() {
+    std::memcpy(header, "Art-Net\0", 8); // Initialize header
+    opcode = htons(0x5000);              // OpCode for ArtDMX
+    protocolVersion = htons(14);         // Protocol version (14 for Art-Net 4)
+    sequence = 0;
+    physical = 0;
+    universe = 0;
+    length = 0;
+    std::memset(data, 0, sizeof(data)); // Initialize data to zero
   }
 };
+#pragma pack(pop) // Restore default packing (if not already present)
 
 // More packet definitions will follow, here is an example:
-
 struct ArtTodDataPacket {
   ArtHeader header;
   uint8_t rdmVer;

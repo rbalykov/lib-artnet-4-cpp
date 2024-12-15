@@ -60,7 +60,9 @@ private:
   uint8_t m_universe;
 
   // --- Internal State ---
-  bool m_isRunning;
+  bool m_isRunning = false;
+  bool m_isConfigured = false;
+  bool m_enableReceiving = false; // Default: disabled
   std::thread m_receiveThread;
   std::mutex m_dataMutex;
   std::vector<uint8_t> m_dmxData; // This will be removed in future steps
@@ -78,8 +80,6 @@ private:
   void handleArtDmx(const uint8_t *buffer, int size);
   void handleArtPoll(const uint8_t *buffer, int size);
   void handleArtPollReply(const uint8_t *buffer, int size);
-
-  bool m_isConfigured;
 };
 
 // Abstract class for network interface ( platform agnostic )

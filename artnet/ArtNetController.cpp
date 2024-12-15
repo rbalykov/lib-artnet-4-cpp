@@ -1,8 +1,9 @@
 #include "ArtNetController.h"
+#include "artnet_types.h"
 #include <cstring>
 #include <iostream>
-#include <stdexcept>
-#include <system_error>
+// #include <stdexcept>
+// #include <system_error>
 #include <thread>
 
 #ifdef __APPLE__
@@ -28,6 +29,7 @@ bool ArtNetController::configure(const std::string &bindAddress, int port,
     return false;
   }
 
+  // Store configuration
   m_bindAddress = bindAddress;
   m_port = port;
   m_net = net;
@@ -35,7 +37,6 @@ bool ArtNetController::configure(const std::string &bindAddress, int port,
   m_universe = universe;
   m_broadcastAddress =
       broadcastAddress.empty() ? "255.255.255.255" : broadcastAddress;
-
   m_isConfigured = true;
 
   return true;
@@ -67,7 +68,12 @@ bool ArtNetController::start() {
   }
 
   m_isRunning = true;
-  m_receiveThread = std::thread(&ArtNetController::receivePackets, this);
+
+  // Start receiving thread only if enabled
+  if (m_enableReceiving) {
+    m_receiveThread = std::thread(&ArtNetController::receivePackets, this);
+  }
+
   return true;
 }
 
@@ -122,6 +128,7 @@ std::vector<uint8_t> ArtNetController::getDmxData(uint16_t universe) {
 
 bool ArtNetController::sendDmx() {
   std::vector<uint8_t> packet;
+
   {
     std::lock_guard<std::mutex> lock(m_dataMutex);
     if (m_dmxData.empty())
@@ -145,37 +152,63 @@ bool ArtNetController::sendPoll() {
 }
 
 void ArtNetController::registerDataCallback(DataCallback callback) {
+  // m_dataCallback = callback;
+  std::lock_guard<std::mutex> lock(m_dataMutex);
+
   m_dataCallback = callback;
+
+  // Enable or disable receiving based on callback presence
+  m_enableReceiving = static_cast<bool>(callback);
 }
 
 bool ArtNetController::prepareArtDmxPacket(uint16_t universe,
                                            const uint8_t *data, size_t length,
                                            std::vector<uint8_t> &packet) {
+  if (length > ARTNET_MAX_DMX_SIZE) {
+    std::cerr << "ArtNet: DMX data exceeds maximum size ("
+              << ARTNET_MAX_DMX_SIZE << " bytes)." << std::endl;
+    return false;
+  }
+
   ArtDmxPacket dmxPacket;
-    
-    // Header
-    dmxPacket.header = ArtHeader(OpCode::OpDmx);
 
-    // Packet Specific Data
-    dmxPacket.sequence = static_cast<uint8_t>(m_seqNumber++);
-    dmxPacket.physical = 0;
-    uint8_t net = m_net & 0x7F;
-    uint8_t subnet = m_subnet & 0xF;
-    uint8_t uni = m_universe & 0xF;
-    dmxPacket.universe = static_cast<uint16_t>((net << 12) | (subnet << 8) | uni);
-    dmxPacket.length = static_cast<uint16_t>(length);
+  // Header
+  // dmxPacket.header = ArtHeader(OpCode::OpDmx);
 
+  // Packet Specific Data
+  dmxPacket.sequence = static_cast<uint8_t>(m_seqNumber++);
+  dmxPacket.physical = 0;
+  // uint8_t net = m_net & 0x7F;
+  // uint8_t subnet = m_subnet & 0xF;
+  // uint8_t uni = m_universe & 0xF;
+  // dmxPacket.universe = static_cast<uint16_t>((net << 12) | (subnet << 8) |
+  // uni);
+  uint8_t net = (m_net & 0x7F);      // Extract 7-bit Net
+  uint8_t subnet = (m_subnet & 0xF); // Extract 4-bit SubNet
+  uint8_t uni = (m_universe & 0xF);  // Extract 4-bit Universe
+  dmxPacket.universe = htons((net << 8) | (subnet << 4) | uni);
+  dmxPacket.length = static_cast<uint16_t>(length);
 
   if (length > ARTNET_MAX_DMX_SIZE) {
-      std::cerr << "ArtNet: DMX data exceeds max size" << std::endl;
-      return false;
+    std::cerr << "ArtNet: DMX data exceeds max size" << std::endl;
+    return false;
   }
-    
-  packet.resize(ARTNET_HEADER_SIZE + 4 + length);
+
+  size_t packetSize = 18 + length; // Header + DMX data
+  packet.resize(packetSize);
+
+  // packet.resize(ARTNET_HEADER_SIZE + 4 + length);
+
   // copy the struct to the output vector
-    std::memcpy(packet.data(), &dmxPacket, ARTNET_HEADER_SIZE + 4);
-    std::memcpy(packet.data()+ ARTNET_HEADER_SIZE + 4, data, length);
-    std::cout << "ArtNet: prepareArtDmxPacket, packet.size: " << packet.size() << std::endl;
+  // std::memcpy(packet.data(), &dmxPacket, ARTNET_HEADER_SIZE + 4);
+  // std::memcpy(packet.data() + ARTNET_HEADER_SIZE + 4, data, length);
+
+  // Copy header and DMX data
+  std::memcpy(packet.data(), &dmxPacket, 18);    // Copy fixed fields
+  std::memcpy(packet.data() + 18, data, length); // Copy DMX data
+
+  std::cout << "ArtNet: prepareArtDmxPacket, packet.size: " << packet.size()
+            << std::endl;
   return true;
 }
 
@@ -195,7 +228,8 @@ bool ArtNetController::sendPacket(const std::vector<uint8_t> &packet) {
               << std::endl;
     return false;
   }
-    std::cout << "ArtNet: sendPacket, packet.size: " << packet.size() << std::endl;
+  std::cout << "ArtNet: sendPacket, packet.size: " << packet.size()
+            << std::endl;
 
   if (!m_networkInterface->sendPacket(packet, m_broadcastAddress, m_port)) {
     std::cerr << "ArtNet: Error sending packet" << std::endl;
@@ -207,11 +241,13 @@ bool ArtNetController::sendPacket(const std::vector<uint8_t> &packet) {
 void ArtNetController::receivePackets() {
   std::cout << "ArtNet: receivePackets thread started. bind address: "
             << m_bindAddress << " port: " << m_port << std::endl;
-  std::vector<uint8_t> buffer(2048); // Large buffer for incoming packets.
+  std::vector<uint8_t> buffer(
+      NetworkInterface::MAX_PACKET_SIZE); // Large buffer for incoming packets.
 
   while (m_isRunning) {
     int bytesReceived = m_networkInterface->receivePacket(buffer);
-      std::cout << "ArtNet: receivePackets, bytesReceived: " << bytesReceived << "buffer.size: " << buffer.size() <<  std::endl;
+    std::cout << "ArtNet: receivePackets, bytesReceived: " << bytesReceived
+              << "buffer.size: " << buffer.size() << std::endl;
     if (bytesReceived > 0) {
       std::cout << "ArtNet: Received " << bytesReceived << " bytes."
                 << std::endl;
@@ -261,21 +297,27 @@ void ArtNetController::handleArtDmx(const uint8_t *buffer, int size) {
   if (size < ARTNET_HEADER_SIZE + 4)
     return;
 
+  // Interpret buffer as an ArtDmxPacket
   const ArtDmxPacket *dmxPacket =
       reinterpret_cast<const ArtDmxPacket *>(buffer);
 
-  uint16_t packetUniverse = (dmxPacket->universe);
-  uint16_t dmxLength = (dmxPacket->length);
+  uint16_t packetUniverse =
+      ntohs(dmxPacket->universe); // Convert from network byte order
+  uint16_t dmxLength =
+      ntohs(dmxPacket->length); // Convert from network byte order
   uint8_t net = (packetUniverse >> 12) & 0x7F;
   uint8_t subnet = (packetUniverse >> 8) & 0xF;
   uint8_t uni = packetUniverse & 0xF;
 
+  // Filter packets based on universe addressing
   if (net != m_net || subnet != m_subnet || uni != m_universe) {
     return;
   }
 
+  // Check if the data callback is set and invoke it
   if (m_dataCallback) {
-    m_dataCallback(packetUniverse, dmxPacket->data.data(), dmxLength);
+    m_dataCallback(packetUniverse, dmxPacket->data,
+                   dmxLength); // Access `data` directly
   }
 }
 

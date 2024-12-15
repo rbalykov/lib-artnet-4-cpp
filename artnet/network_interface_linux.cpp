@@ -9,10 +9,11 @@
 #include <unistd.h>
 
 namespace ArtNet {
-NetworkInterfaceLinux::NetworkInterfaceLinux():m_recvBuffer(MAX_PACKET_SIZE){}
+NetworkInterfaceLinux::NetworkInterfaceLinux()
+    : m_recvBuffer(MAX_PACKET_SIZE) {}
 
 bool NetworkInterfaceLinux::createSocket(const std::string &bindAddress,
-                                           int port) {
+                                         int port) {
   m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   m_bindAddress = bindAddress;
   m_port = port;
@@ -26,6 +27,13 @@ bool NetworkInterfaceLinux::createSocket(const std::string &bindAddress,
   if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) <
       0) {
     std::cerr << "ArtNet: Failed to set socket to reuse address" << std::endl;
+    return false;
+  }
+
+  int broadcastEnable = 1;
+  if (setsockopt(m_socket, SOL_SOCKET, SO_BROADCAST, &broadcastEnable,
+                 sizeof(broadcastEnable)) < 0) {
+    std::cerr << "ArtNet: Failed to set socket to broadcast" << std::endl;
     return false;
   }
 
@@ -90,7 +98,7 @@ bool NetworkInterfaceLinux::sendPacket(const std::vector<uint8_t> &packet,
 }
 
 int NetworkInterfaceLinux::receivePacket(std::vector<uint8_t> &buffer) {
-      sockaddr_in senderAddr;
+  sockaddr_in senderAddr;
   socklen_t addrLen = sizeof(senderAddr);
 
   ssize_t bytesReceived =
@@ -103,13 +111,13 @@ int NetworkInterfaceLinux::receivePacket(std::vector<uint8_t> &buffer) {
     }
     return 0; // Non-blocking socket returns 0 if no data
   }
-    
-    buffer.assign(m_recvBuffer.begin(), m_recvBuffer.begin() + bytesReceived);
-      std::cout << "ArtNet (Linux): receivePacket, buffer.size: " << buffer.size() << std::endl;
-    std::cout << "ArtNet (Linux): bytes received: " << bytesReceived << std::endl;
+
+  buffer.assign(m_recvBuffer.begin(), m_recvBuffer.begin() + bytesReceived);
+  std::cout << "ArtNet (Linux): receivePacket, buffer.size: " << buffer.size()
+            << std::endl;
+  std::cout << "ArtNet (Linux): bytes received: " << bytesReceived << std::endl;
   return static_cast<int>(bytesReceived);
 }
-
 
 void NetworkInterfaceLinux::closeSocket() {
   if (m_socket != -1) {
@@ -117,6 +125,5 @@ void NetworkInterfaceLinux::closeSocket() {
     m_socket = -1;
   }
 }
-
 
 } // namespace ArtNet
