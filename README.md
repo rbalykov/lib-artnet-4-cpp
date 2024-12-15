@@ -2,9 +2,11 @@
 
 A modern C++ implementation of the Art-Net 4 protocol. This library provides a robust and efficient way to communicate using the Art-Net protocol, commonly used in lighting control and DMX over Ethernet applications.
 
+<img width="1397" alt="image" src="https://github.com/user-attachments/assets/89a7acab-3a7d-4c11-bcc6-deb9de07a78c" />
+
 ## Features
 
-- Full Art-Net 4 protocol support
+- [ ] Full Art-Net 4 protocol support (WIP)
 - Cross-platform compatibility (Linux and BSD/macOS)
 - Modern C++ (C++17) implementation
 - Thread-safe DMX data handling
