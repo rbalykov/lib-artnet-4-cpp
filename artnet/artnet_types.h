@@ -3,8 +3,8 @@
 #include <arpa/inet.h>
 #include <array>
 #include <cstdint>
-#include <string>
-#include <vector>
+// #include <string>
+// #include <vector>
 
 namespace ArtNet {
 
@@ -91,9 +91,7 @@ struct ArtPollPacket {
   uint32_t filler2;
   std::array<uint8_t, 4> versionInfo;
 
-  ArtPollPacket()
-      : header(OpCode::OpPoll), filler1(0), filler2(0),
-        versionInfo{0, 0, 0, 0} {}
+  ArtPollPacket() : header(OpCode::OpPoll), filler1(0), filler2(0), versionInfo{0, 0, 0, 0} {}
 };
 
 // ArtPollReply Packet (from spec section 6.3)
@@ -123,8 +121,7 @@ struct ArtPollReplyPacket {
   std::array<uint8_t, 3> filler3;
 
   ArtPollReplyPacket()
-      : header(OpCode::OpPollReply), port(ARTNET_PORT), versionInfo{0, 0},
-        netSwitch(0), subSwitch(0), oem(0), ubeaVersion(0), status(0),
+      : header(OpCode::OpPollReply), port(ARTNET_PORT), versionInfo{0, 0}, netSwitch(0), subSwitch(0), oem(0), ubeaVersion(0), status(0),
         estaMan(0), numPorts(0), filler3{0, 0, 0} {
     shortName.fill(0);
     longName.fill(0);

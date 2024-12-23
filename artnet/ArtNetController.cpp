@@ -234,8 +234,10 @@ bool ArtNetController::sendDmx() {
 bool ArtNetController::sendPoll() {
   std::vector<uint8_t> packet;
 
-  if (!prepareArtPollPacket(packet))
+  if (!prepareArtPollPacket(packet)) {
+    Logger::info("sendPoll: prepareArtDmxPacket false");
     return false;
+  }
 
   return sendPacket(packet);
 }
@@ -338,29 +340,42 @@ void ArtNetController::receivePackets() {
 
 void ArtNetController::handleArtPacket(const uint8_t *buffer, int size) {
   if (size < ARTNET_HEADER_SIZE) {
+    Logger::debug("handleArtPacket: invalid size");
     return; // Ignore invalid packets
   }
-
-  Logger::debug("handleArtPacket");
 
   ArtHeader header(OpCode::OpPoll); // Dummy OpCode, it will be overwritten.
   std::memcpy(&header, buffer, ARTNET_HEADER_SIZE);
 
   // validate id (should be always "Art-Net")
   if (std::strncmp(reinterpret_cast<const char *>(header.id.data()), "Art-Net", 8) != 0) {
+    Logger::error("Invalid Art-Net ID");
     return;
   }
 
   uint16_t opcode = ntohs(header.opcode);
 
+  // Dmx
   if (opcode == static_cast<uint16_t>(OpCode::OpDmx)) {
+    Logger::debug("handleArtPacket opcode: OpDmx ", opcode);
     handleArtDmx(buffer, size);
+
+    // Poll
   } else if (opcode == static_cast<uint16_t>(OpCode::OpPoll)) {
+    Logger::debug("handleArtPacket opcode: OpPoll ", opcode);
     handleArtPoll(buffer, size);
+
+    // PollReply
   } else if (opcode == static_cast<uint16_t>(OpCode::OpPollReply)) {
+    Logger::debug("handleArtPacket opcode: OpPollReply ", opcode);
     handleArtPollReply(buffer, size);
+  } else {
+
+    // Unhandled opcode
+    Logger::debug("handleArtPacket opcode: NOT HANDLED ", opcode);
   }
-  // Add more opcodes as needed
+
+  // TODO: Handle more opcodes as needed
 }
 
 void ArtNetController::handleArtDmx(const uint8_t *buffer, int size) {
@@ -389,16 +404,20 @@ void ArtNetController::handleArtDmx(const uint8_t *buffer, int size) {
 }
 
 void ArtNetController::handleArtPoll([[maybe_unused]] const uint8_t *buffer, int size) {
-  if (size < static_cast<int>(sizeof(ArtPollPacket)))
+  if (size < static_cast<int>(sizeof(ArtPollPacket))) {
+    Logger::error("handleArtPoll: Invalid ArtPollPacket size");
     return;
+  }
 
   Logger::debug("Received Poll Packet");
   sendPoll();
 }
 
 void ArtNetController::handleArtPollReply(const uint8_t *buffer, int size) {
-  if (size < static_cast<int>(sizeof(ArtPollReplyPacket)))
+  if (size < static_cast<int>(sizeof(ArtPollReplyPacket))) {
+    Logger::error("handleArtPollReply: Invalid ArtPollReplyPacket size");
     return;
+  }
 
   const ArtPollReplyPacket *pollReplyPacket = reinterpret_cast<const ArtPollReplyPacket *>(buffer);
   Logger::debug("Received Poll Reply packet from: ", static_cast<int>(pollReplyPacket->ip[0]), ".",

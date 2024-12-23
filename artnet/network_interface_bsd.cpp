@@ -20,6 +20,14 @@ bool NetworkInterfaceBSD::createSocket(const std::string &bindAddress, int port)
     return false;
   }
 
+#ifdef SO_REUSEPORT
+  int enableReusePort = 1;
+  if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEPORT, &enableReusePort, sizeof(int)) < 0) {
+    Logger::error("Failed to set socket to reuse port");
+    return false;
+  }
+#endif
+
   // Allow socket to reuse address
   int enable = 1;
   if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
@@ -54,6 +62,21 @@ bool NetworkInterfaceBSD::createSocket(const std::string &bindAddress, int port)
 }
 
 bool NetworkInterfaceBSD::bindSocket() {
+  // Check port is in use
+  sockaddr_in check_addr;
+  check_addr.sin_family = AF_INET;
+  check_addr.sin_port = htons(m_port);
+  check_addr.sin_addr.s_addr = INADDR_ANY;
+
+  int check_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (bind(check_socket, (struct sockaddr *)&check_addr, sizeof(check_addr)) == 0) {
+    close(check_socket); // Port is free
+  } else {
+    close(check_socket);
+    Logger::info("Port already in use, but continuing due to SO_REUSEADDR");
+  }
+
+  // Binding
   sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_port = htons(m_port);
@@ -118,6 +141,7 @@ int NetworkInterfaceBSD::receivePacket(std::vector<uint8_t> &buffer) {
 
   return static_cast<int>(bytesReceived);
 }
+
 void NetworkInterfaceBSD::closeSocket() {
   if (m_socket != -1) {
     close(m_socket);

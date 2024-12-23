@@ -12,6 +12,15 @@
 #include <thread>
 #include <vector>
 
+void myDataCallback(uint16_t universe, const uint8_t *data, uint16_t length);
+void myDataCallback(uint16_t universe, const uint8_t *data, uint16_t length) {
+  std::cout << "myDataCallback: Received DMX data on universe: " << universe << ", length: " << length << ", data: ";
+  for (int i = 0; i < length; ++i) {
+    std::cout << static_cast<int>(data[i]) << " ";
+  }
+  std::cout << std::endl;
+}
+
 static volatile bool running = true;
 static void signalHandler(int) { running = false; }
 
@@ -160,6 +169,10 @@ int main(int argc, char *argv[]) {
     return dmxData;
   };
 
+  // Set ArtNet callback
+  controller.registerDataCallback(myDataCallback);
+
+  // Start ArtNet controller
   if (!controller.start(frameGenerator, ArtNet::ARTNET_FPS)) {
     ArtNet::Logger::error("Start error");
     return 1;

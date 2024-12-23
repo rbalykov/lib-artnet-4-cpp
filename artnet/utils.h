@@ -1,12 +1,15 @@
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <pthread.h>
 #include <sched.h>
-// #include <system_error>
+#include <string>
 
 namespace ArtNet {
 namespace utils {
 
+// Threads
 enum class ThreadPriority { NORMAL, HIGH, REALTIME };
 
 inline bool setThreadPriority(ThreadPriority priority) {
@@ -42,6 +45,9 @@ inline bool setThreadPriority(ThreadPriority priority) {
 
   return true;
 }
+
+// Networking
+std::string formatIP(const std::array<uint8_t, 4> &ip);
 
 } // namespace utils
 } // namespace ArtNet

@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -22,8 +23,7 @@ namespace ArtNet {
 class ArtNetController {
 public:
   // Data Handling
-  using DataCallback = std::function<void(
-      uint16_t universe, const uint8_t *data, uint16_t length)>;
+  using DataCallback = std::function<void(uint16_t universe, const uint8_t *data, uint16_t length)>;
   using FrameGenerator = std::function<std::vector<uint8_t>()>;
 
   // Statistics structure for monitoring
@@ -40,18 +40,14 @@ public:
       std::chrono::microseconds lastFrameTime;
     };
 
-    Snapshot getSnapshot() const {
-      return Snapshot{totalFrames.load(), droppedFrames.load(),
-                      queueDepth.load(), lastFrameTime};
-    }
+    Snapshot getSnapshot() const { return Snapshot{totalFrames.load(), droppedFrames.load(), queueDepth.load(), lastFrameTime}; }
   };
 
   ArtNetController();
   ~ArtNetController();
 
   // Configuration
-  bool configure(const std::string &bindAddress, int port, uint8_t net,
-                 uint8_t subnet, uint8_t universe,
+  bool configure(const std::string &bindAddress, int port, uint8_t net, uint8_t subnet, uint8_t universe,
                  const std::string &broadcastAddress = "255.255.255.255");
 
   // Networking
@@ -111,8 +107,7 @@ private:
   Statistics m_stats;
 
   // Core Logic
-  bool prepareArtDmxPacket(uint16_t universe, const uint8_t *data,
-                           size_t length, std::vector<uint8_t> &packet);
+  bool prepareArtDmxPacket(uint16_t universe, const uint8_t *data, size_t length, std::vector<uint8_t> &packet);
   bool prepareArtPollPacket(std::vector<uint8_t> &packet);
   bool sendPacket(const std::vector<uint8_t> &packet);
 
@@ -121,6 +116,22 @@ private:
   void handleArtDmx(const uint8_t *buffer, int size);
   void handleArtPoll(const uint8_t *buffer, int size);
   void handleArtPollReply(const uint8_t *buffer, int size);
+
+  // Node Discovery
+  struct NodeInfo {
+    std::array<uint8_t, 4> ip;
+    uint16_t port;
+    uint16_t oem;
+    uint8_t netSwitch;
+    uint8_t subSwitch;
+    std::string shortName;
+    std::string longName;
+    std::vector<uint16_t> subscribedUniverses; // List of subscribed universes
+    // Add other useful information from the ArtPollReply
+  };
+
+  std::map<std::string, NodeInfo> m_discoveredNodes;
+  std::mutex m_nodesMutex;
 };
 
 } // namespace ArtNet
