@@ -64,6 +64,7 @@ public:
   // Sending
   bool sendDmx();
   bool sendPoll();
+  void sendPollReply(const uint8_t *buffer, int size);
 
   // Receiving
   void registerDataCallback(DataCallback callback);
@@ -109,7 +110,7 @@ private:
   // Core Logic
   bool prepareArtDmxPacket(uint16_t universe, const uint8_t *data, size_t length, std::vector<uint8_t> &packet);
   bool prepareArtPollPacket(std::vector<uint8_t> &packet);
-  bool sendPacket(const std::vector<uint8_t> &packet);
+  bool sendPacket(const std::vector<uint8_t> &packet, const std::string &address = "", int port = 0);
 
   void receivePackets();
   void handleArtPacket(const uint8_t *buffer, int size);

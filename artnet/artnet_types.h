@@ -87,12 +87,32 @@ struct ArtHeader {
 // ArtPoll Packet (from spec section 6.2)
 struct ArtPollPacket {
   ArtHeader header;
-  uint16_t filler1;
-  uint32_t filler2;
+  uint8_t flags;
+  uint8_t diagPriority;
+  uint8_t targetPortAddressTopHi;
+  uint8_t targetPortAddressTopLo;
+  uint8_t targetPortAddressBottomHi;
+  uint8_t targetPortAddressBottomLo;
+  uint8_t estaManHi;
+  uint8_t estaManLo;
+  uint8_t oemHi;
+  uint8_t oemLo;
+
   std::array<uint8_t, 4> versionInfo;
 
-  ArtPollPacket() : header(OpCode::OpPoll), filler1(0), filler2(0), versionInfo{0, 0, 0, 0} {}
+  ArtPollPacket()
+      : header(OpCode::OpPoll), flags(0), diagPriority(0), targetPortAddressTopHi(0), targetPortAddressTopLo(0),
+        targetPortAddressBottomHi(0), targetPortAddressBottomLo(0), estaManHi(0), estaManLo(0), oemHi(0), oemLo(0),
+        versionInfo{0, 0, 0, 0} {}
 };
+// struct ArtPollPacket {
+//   ArtHeader header;
+//   uint16_t filler1;
+//   uint32_t filler2;
+//   std::array<uint8_t, 4> versionInfo;
+//
+//   ArtPollPacket() : header(OpCode::OpPoll), filler1(0), filler2(0), versionInfo{0, 0, 0, 0} {}
+// };
 
 // ArtPollReply Packet (from spec section 6.3)
 struct ArtPollReplyPacket {

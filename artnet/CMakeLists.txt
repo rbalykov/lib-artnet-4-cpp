@@ -3,6 +3,7 @@ set(ARTNET_SRC
     ArtNetController.cpp
     network_interface_bsd.cpp
     network_interface_linux.cpp
+    utils.cpp
 )
 
 # Header files for our artnet lib

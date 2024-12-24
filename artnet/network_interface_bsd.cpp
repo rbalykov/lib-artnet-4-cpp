@@ -11,6 +11,8 @@
 namespace ArtNet {
 NetworkInterfaceBSD::NetworkInterfaceBSD() : m_recvBuffer(MAX_PACKET_SIZE) {}
 
+int NetworkInterfaceBSD::getSocket() const { return m_socket; }
+
 bool NetworkInterfaceBSD::createSocket(const std::string &bindAddress, int port) {
   m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   m_bindAddress = bindAddress;

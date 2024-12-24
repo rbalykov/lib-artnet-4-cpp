@@ -48,6 +48,8 @@ inline bool setThreadPriority(ThreadPriority priority) {
 
 // Networking
 std::string formatIP(const std::array<uint8_t, 4> &ip);
+std::string formatIP(const uint8_t *data, size_t size);
+std::array<uint8_t, 4> parseIP(std::string const &ipString); // added const &
 
 } // namespace utils
 } // namespace ArtNet

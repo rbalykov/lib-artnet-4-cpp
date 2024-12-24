@@ -11,6 +11,8 @@
 namespace ArtNet {
 NetworkInterfaceLinux::NetworkInterfaceLinux() : m_recvBuffer(MAX_PACKET_SIZE) {}
 
+int NetworkInterfaceLinux::getSocket() const { return m_socket; }
+
 bool NetworkInterfaceLinux::createSocket(const std::string &bindAddress, int port) {
   m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   m_bindAddress = bindAddress;

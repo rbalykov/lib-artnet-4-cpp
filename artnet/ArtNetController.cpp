@@ -3,7 +3,9 @@
 #include "logging.h"
 #include "utils.h"
 
+#include <chrono>
 #include <cstring>
+#include <random>
 #include <thread>
 
 #ifdef __APPLE__
@@ -242,6 +244,62 @@ bool ArtNetController::sendPoll() {
   return sendPacket(packet);
 }
 
+void ArtNetController::sendPollReply(const uint8_t *buffer, int size) {
+  Logger::debug("sendPollReply: size: ", size);
+
+  const ArtPollPacket *pollPacket = reinterpret_cast<const ArtPollPacket *>(buffer);
+  std::vector<uint8_t> packet;
+
+  // Create the ArtPollReply packet
+  ArtPollReplyPacket replyPacket;
+
+  // Populate the ArtPollReply packet
+  replyPacket.ip = utils::parseIP(m_bindAddress);
+  replyPacket.port = htons(m_port);
+  replyPacket.versionInfo[0] = 0; // Firmware Version Hi
+  replyPacket.versionInfo[1] = 0; // Firmware Version Lo
+  replyPacket.netSwitch = m_net;
+  replyPacket.subSwitch = m_subnet;
+  replyPacket.oem = 0;                                                       // TODO: Make configurable
+  replyPacket.ubeaVersion = 0;                                               // UBEA version
+  replyPacket.status = 0x01;                                                 // Status: Ok.  (TODO: Use enum/define)
+  replyPacket.estaMan = 0x00;                                                // TODO: Should be a value set by ESTA
+  std::string shortName = "GM ArtNet Node";                                  // TODO: Make configurable.
+  std::string longName = "Gaston Morixe ArtNet Node with awesome functions"; // TODO: Make Configurable.
+
+  std::memcpy(replyPacket.shortName.data(), shortName.c_str(), std::min((size_t)shortName.size(), (size_t)replyPacket.shortName.size()));
+  std::memcpy(replyPacket.longName.data(), longName.c_str(), std::min((size_t)longName.size(), (size_t)replyPacket.longName.size()));
+  std::memset(replyPacket.nodeReport.data(), 0, replyPacket.nodeReport.size()); // TODO: Add node information here
+  replyPacket.numPorts = 1;                                                     // TODO: Make configurable.
+  replyPacket.portType.fill(0);
+  replyPacket.goodOutputA.fill(0);
+  replyPacket.goodInputA.fill(0);
+  replyPacket.swIn.fill(0);
+  replyPacket.swOut.fill(0);
+  replyPacket.acnPriority.fill(0);
+  replyPacket.swMacro.fill(0);
+  replyPacket.swRemote.fill(0);
+
+  packet.resize(sizeof(replyPacket));
+  std::memcpy(packet.data(), &replyPacket, sizeof(replyPacket));
+
+  // Generate random delay
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis(0, 1000);
+
+  // get source address from poll packet to reply unicast
+  sockaddr_in senderAddr;
+  socklen_t addrLen = sizeof(senderAddr);
+  getpeername(m_networkInterface->getSocket(), (sockaddr *)&senderAddr, &addrLen);
+  std::string destIP = utils::formatIP(reinterpret_cast<const uint8_t *>(&senderAddr.sin_addr.s_addr), 4);
+  int destPort = ntohs(senderAddr.sin_port);
+  Logger::debug("Sending ArtPollReply to: ", destIP, ":", destPort);
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(dis(gen)));
+  sendPacket(packet, destIP, destPort);
+}
+
 void ArtNetController::registerDataCallback(DataCallback callback) {
   // m_dataCallback = callback;
   std::lock_guard<std::mutex> lock(m_dataMutex);
@@ -296,22 +354,27 @@ bool ArtNetController::prepareArtPollPacket(std::vector<uint8_t> &packet) {
   ArtPollPacket pollPacket;
 
   packet.resize(sizeof(pollPacket));
-
-  // copy the struct to the output vector
   std::memcpy(packet.data(), &pollPacket, sizeof(pollPacket));
   return true;
 }
 
-bool ArtNetController::sendPacket(const std::vector<uint8_t> &packet) {
+bool ArtNetController::sendPacket(const std::vector<uint8_t> &packet, const std::string &address, int port) {
   if (!m_isRunning || !m_networkInterface) {
     Logger::error("Not Running or Interface not initialized");
     return false;
   }
   Logger::debug("sendPacket, packet.size: ", packet.size());
 
-  if (!m_networkInterface->sendPacket(packet, m_broadcastAddress, m_port)) {
-    Logger::error("Error sending packet");
-    return false;
+  if (address.empty() && port == 0) {
+    if (!m_networkInterface->sendPacket(packet, m_broadcastAddress, m_port)) {
+      Logger::error("Error sending packet");
+      return false;
+    }
+  } else {
+    if (!m_networkInterface->sendPacket(packet, address, port)) {
+      Logger::error("Error sending packet to specific address");
+      return false;
+    }
   }
   return true;
 }
@@ -333,8 +396,9 @@ void ArtNetController::receivePackets() {
       }
     }
 
-    // Add a small delay
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    // Add a small delay only if something was received
+    if (bytesReceived <= 0)
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
 }
 
@@ -353,7 +417,8 @@ void ArtNetController::handleArtPacket(const uint8_t *buffer, int size) {
     return;
   }
 
-  uint16_t opcode = ntohs(header.opcode);
+  // uint16_t opcode = ntohs(header.opcode);
+  uint16_t opcode = header.opcode; // Already in little-endian
 
   // Dmx
   if (opcode == static_cast<uint16_t>(OpCode::OpDmx)) {
@@ -404,13 +469,25 @@ void ArtNetController::handleArtDmx(const uint8_t *buffer, int size) {
 }
 
 void ArtNetController::handleArtPoll([[maybe_unused]] const uint8_t *buffer, int size) {
-  if (size < static_cast<int>(sizeof(ArtPollPacket))) {
-    Logger::error("handleArtPoll: Invalid ArtPollPacket size");
+  if (size < ARTNET_HEADER_SIZE + 2) {
+    Logger::error("handleArtPoll: Invalid ArtPollPacket size: ", size);
     return;
   }
 
+  ArtPollPacket pollPacket;
+  std::memset(&pollPacket, 0, sizeof(pollPacket));
+  std::memcpy(&pollPacket, buffer, std::min((size_t)size, sizeof(pollPacket)));
+
+  // if (size < static_cast<int>(sizeof(ArtPollPacket))) {
+  //   Logger::error("handleArtPoll: Invalid ArtPollPacket size: ", size);
+  //   return;
+  // }
+
+  // Now you can safely access the fields of pollPacket,
+  // knowing that any missing fields beyond the received size will be zero.
+
   Logger::debug("Received Poll Packet");
-  sendPoll();
+  sendPollReply(buffer, size);
 }
 
 void ArtNetController::handleArtPollReply(const uint8_t *buffer, int size) {
