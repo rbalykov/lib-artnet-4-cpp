@@ -1,7 +1,9 @@
 #include "utils.h"
 #include "logging.h"
 
+#include <arpa/inet.h>
 #include <iostream>
+#include <netinet/in.h>
 #include <sstream>
 
 namespace ArtNet {
@@ -36,6 +38,16 @@ std::array<uint8_t, 4> parseIP(std::string const &ipString) {
     }
   }
   return ip;
+}
+
+std::string ipAddressToString(sockaddr_in ip) {
+  char str[INET_ADDRSTRLEN];
+
+  // store this IP address in sa:
+  // return inet_pton(AF_INET, "192.0.2.33", &(sa.sin_addr));
+
+  // now get it back and print it
+  return inet_ntop(AF_INET, &(ip.sin_addr), str, INET_ADDRSTRLEN);
 }
 
 } // namespace utils

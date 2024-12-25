@@ -268,16 +268,16 @@ bool ArtNetController::sendDmx() {
   return sendPacket(packet);
 }
 
-bool ArtNetController::sendPoll() {
-  std::vector<uint8_t> packet;
-
-  if (!prepareArtPollPacket(packet)) {
-    Logger::info("sendPoll: prepareArtDmxPacket false");
-    return false;
-  }
-
-  return sendPacket(packet);
-}
+// bool ArtNetController::sendPoll() {
+//   std::vector<uint8_t> packet;
+//
+//   if (!prepareArtPollPacket(packet)) {
+//     Logger::info("sendPoll: prepareArtDmxPacket false");
+//     return false;
+//   }
+//
+//   return sendPacket(packet);
+// }
 
 void ArtNetController::sendPollReply(const uint8_t *buffer, sockaddr_in senderAddr) {
   // Use senderAddr to reply in unicast
@@ -430,22 +430,22 @@ void ArtNetController::sendPollReply(const uint8_t *buffer, sockaddr_in senderAd
   std::memcpy(packet.data(), &replyPacket, packetSize);
 
   // Debug print replyPacket bytes
-  Logger::debug("ArtPollReply packet bytes:");
-  for (size_t i = 0; i < sizeof(replyPacket); i++) {
-    if (i % 16 == 0)
-      std::cout << std::endl << std::hex << std::setw(4) << std::setfill('0') << i << ": ";
-    std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(reinterpret_cast<uint8_t *>(&replyPacket)[i]) << " ";
-  }
-  std::cout << std::endl;
-
-  // Debug print final packet bytes
-  Logger::debug("Final packet bytes:");
-  for (size_t i = 0; i < packet.size(); i++) {
-    if (i % 16 == 0)
-      std::cout << std::endl << std::hex << std::setw(4) << std::setfill('0') << i << ": ";
-    std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(packet[i]) << " ";
-  }
-  std::cout << std::endl;
+  // Logger::debug("ArtPollReply packet bytes:");
+  // for (size_t i = 0; i < sizeof(replyPacket); i++) {
+  //   if (i % 16 == 0)
+  //     std::cout << std::endl << std::hex << std::setw(4) << std::setfill('0') << i << ": ";
+  //   std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(reinterpret_cast<uint8_t *>(&replyPacket)[i]) << " ";
+  // }
+  // std::cout << std::endl;
+  //
+  // // Debug print final packet bytes
+  // Logger::debug("Final packet bytes:");
+  // for (size_t i = 0; i < packet.size(); i++) {
+  //   if (i % 16 == 0)
+  //     std::cout << std::endl << std::hex << std::setw(4) << std::setfill('0') << i << ": ";
+  //   std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(packet[i]) << " ";
+  // }
+  // std::cout << std::endl;
 
   // Send the packet
   sendPacket(packet, destIP, destPort);
@@ -507,13 +507,13 @@ bool ArtNetController::prepareArtDmxPacket(uint16_t universe, const uint8_t *dat
   return true;
 }
 
-bool ArtNetController::prepareArtPollPacket(std::vector<uint8_t> &packet) {
-  ArtPollPacket pollPacket;
-
-  packet.resize(sizeof(pollPacket));
-  std::memcpy(packet.data(), &pollPacket, sizeof(pollPacket));
-  return true;
-}
+// bool ArtNetController::prepareArtPollPacket(std::vector<uint8_t> &packet) {
+//   ArtPollPacket pollPacket;
+//
+//   packet.resize(sizeof(pollPacket));
+//   std::memcpy(packet.data(), &pollPacket, sizeof(pollPacket));
+//   return true;
+// }
 
 bool ArtNetController::sendPacket(const std::vector<uint8_t> &packet, const std::string &address, int port) {
   if (!m_isRunning || !m_networkInterface) {
@@ -587,36 +587,39 @@ void ArtNetController::handleArtPacket(const uint8_t *buffer, int size, sockaddr
     return; // Ignore invalid packets
   }
 
-  ArtHeader header(OpCode::OpPoll); // Dummy OpCode, it will be overwritten.
-  std::memcpy(&header, buffer, ARTNET_HEADER_SIZE);
+  // Read directly from the buffer without creating a new header
+  const ArtHeader *header = reinterpret_cast<const ArtHeader *>(buffer);
 
   // validate id (should be always "Art-Net")
-  if (std::strncmp(reinterpret_cast<const char *>(header.id.data()), "Art-Net", 8) != 0) {
+  if (std::strncmp(reinterpret_cast<const char *>(header->id.data()), "Art-Net", 8) != 0) {
     Logger::error("Invalid Art-Net ID");
     return;
   }
 
-  // uint16_t opcode = ntohs(header.opcode);
-  uint16_t opcode = header.opcode; // Already in little-endian
+  uint16_t opcode = header->opcode; // Already in little-endian
+
+  // std::cout << "Raw opcode: 0x" << std::hex << std::setfill('0') << std::setw(4) << static_cast<int>(opcode) << std::endl;
+  // std::cout << std::dec;
 
   // Dmx
   if (opcode == static_cast<uint16_t>(OpCode::OpDmx)) {
-    Logger::debug("handleArtPacket opcode: OpDmx ", opcode);
+    Logger::debug("handleArtPacket opcode: OpDmx ", opcode, " from IP: ", utils::ipAddressToString(senderAddr));
     handleArtDmx(buffer, size);
 
     // Poll
   } else if (opcode == static_cast<uint16_t>(OpCode::OpPoll)) {
-    Logger::info("handleArtPacket opcode: OpPoll ", opcode);
+    Logger::info("handleArtPacket opcode: OpPoll ", opcode, " from IP: ", utils::ipAddressToString(senderAddr));
+
     handleArtPoll(buffer, size, senderAddr);
 
     // PollReply
   } else if (opcode == static_cast<uint16_t>(OpCode::OpPollReply)) {
-    Logger::info("handleArtPacket opcode: OpPollReply ", opcode);
+    Logger::info("handleArtPacket opcode: OpPollReply ", opcode, " from IP: ", utils::ipAddressToString(senderAddr));
+
     handleArtPollReply(buffer, size);
   } else {
-
     // Unhandled opcode
-    Logger::error("handleArtPacket opcode: NOT HANDLED ", opcode);
+    Logger::error("handleArtPacket opcode: NOT HANDLED ", opcode, " from IP: ", utils::ipAddressToString(senderAddr));
   }
 
   // TODO: Handle more opcodes as needed

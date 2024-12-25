@@ -92,6 +92,8 @@ struct ArtHeader {
 #pragma pack(push, 1) // Disable padding.
 struct ArtPollPacket {
   ArtHeader header;
+  uint8_t versionHi;  // Protocol version, high byte first
+  uint8_t versionLow; // Protocol version, low byte last
   uint8_t flags;
   uint8_t diagPriority;
   uint8_t targetPortAddressTopHi;
@@ -106,9 +108,9 @@ struct ArtPollPacket {
   std::array<uint8_t, 4> versionInfo;
 
   ArtPollPacket()
-      : header(OpCode::OpPoll), flags(0), diagPriority(0), targetPortAddressTopHi(0), targetPortAddressTopLo(0),
-        targetPortAddressBottomHi(0), targetPortAddressBottomLo(0), estaManHi(0), estaManLo(0), oemHi(0), oemLo(0),
-        versionInfo{0, 0, 0, 0} {}
+      : header(OpCode::OpPoll), versionHi(0), versionLow(14), flags(0), diagPriority(0), targetPortAddressTopHi(0),
+        targetPortAddressTopLo(0), targetPortAddressBottomHi(0), targetPortAddressBottomLo(0), estaManHi(0), estaManLo(0), oemHi(0),
+        oemLo(0), versionInfo{0, 0, 0, 0} {}
 };
 #pragma pack(pop) // Restore default alignment.
 

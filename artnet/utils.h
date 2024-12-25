@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <sched.h>
 #include <string>
@@ -50,6 +51,7 @@ inline bool setThreadPriority(ThreadPriority priority) {
 std::string formatIP(const std::array<uint8_t, 4> &ip);
 std::string formatIP(const uint8_t *data, size_t size);
 std::array<uint8_t, 4> parseIP(std::string const &ipString); // added const &
+std::string ipAddressToString(sockaddr_in ip);
 
 } // namespace utils
 } // namespace ArtNet

@@ -64,7 +64,7 @@ public:
 
   // Sending
   bool sendDmx();
-  bool sendPoll();
+  // bool sendPoll();
   void sendPollReply(const uint8_t *buffer, sockaddr_in senderAddr);
 
   // Receiving
@@ -114,7 +114,7 @@ private:
 
   // Core Logic
   bool prepareArtDmxPacket(uint16_t universe, const uint8_t *data, size_t length, std::vector<uint8_t> &packet);
-  bool prepareArtPollPacket(std::vector<uint8_t> &packet);
+  // bool prepareArtPollPacket(std::vector<uint8_t> &packet);
 
   bool sendPacket(const std::vector<uint8_t> &packet, const std::string &address = "", int port = 0);
 
