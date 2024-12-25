@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <netinet/in.h>
 #include <queue>
 #include <string>
 #include <thread>
@@ -64,17 +65,21 @@ public:
   // Sending
   bool sendDmx();
   bool sendPoll();
-  void sendPollReply(const uint8_t *buffer, int size);
+  void sendPollReply(const uint8_t *buffer, sockaddr_in senderAddr);
 
   // Receiving
   void registerDataCallback(DataCallback callback);
 
   // Statistics
-  // const Statistics &getStatistics() const { return m_stats; }
   Statistics::Snapshot getStatistics() const { return m_stats.getSnapshot(); }
+
+  // Feature Gate
+  void setEnableSendingDMX(bool enable);
+  // void setEnableReceiving(bool enable);
 
 private:
   void startFrameProcessor();
+  void logDmxData(const std::vector<uint8_t> &dmxData);
 
   // Network Related
   std::unique_ptr<NetworkInterface> m_networkInterface;
@@ -92,7 +97,7 @@ private:
   static constexpr size_t MAX_QUEUE_SIZE = 4;
   bool m_isRunning = false;
   bool m_isConfigured = false;
-  bool m_enableReceiving = false;
+  bool m_enableSendingDMX = false;
   std::thread m_receiveThread;
   std::mutex m_dataMutex;
   std::vector<uint8_t> m_dmxData;
@@ -110,12 +115,14 @@ private:
   // Core Logic
   bool prepareArtDmxPacket(uint16_t universe, const uint8_t *data, size_t length, std::vector<uint8_t> &packet);
   bool prepareArtPollPacket(std::vector<uint8_t> &packet);
+
   bool sendPacket(const std::vector<uint8_t> &packet, const std::string &address = "", int port = 0);
 
   void receivePackets();
-  void handleArtPacket(const uint8_t *buffer, int size);
+  void handleArtPacket(const uint8_t *buffer, int size, sockaddr_in senderAddr);
+
   void handleArtDmx(const uint8_t *buffer, int size);
-  void handleArtPoll(const uint8_t *buffer, int size);
+  void handleArtPoll(const uint8_t *buffer, int size, sockaddr_in senderAddr);
   void handleArtPollReply(const uint8_t *buffer, int size);
 
   // Node Discovery

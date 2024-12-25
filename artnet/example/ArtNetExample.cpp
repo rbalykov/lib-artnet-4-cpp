@@ -5,7 +5,6 @@
 #include <chrono>
 #include <csignal>
 #include <cstdlib>
-#include <iomanip>
 #include <iostream>
 #include <random>
 #include <string_view>
@@ -34,6 +33,7 @@ struct Config {
   ArtNet::LogLevel logLevel = ArtNet::LogLevel::ERROR;
 };
 
+void printUsage(const char *programName);
 void printUsage(const char *programName) {
   std::cout << "Usage: " << programName << " [options]\n"
             << "Options:\n"
@@ -50,6 +50,7 @@ void printUsage(const char *programName) {
             << "  " << programName << " --net=1 --subnet=2 --universe=3 --verbose=2\n";
 }
 
+bool parseArgs(int argc, char *argv[], Config &config);
 bool parseArgs(int argc, char *argv[], Config &config) {
   for (int i = 1; i < argc; ++i) {
     std::string_view arg(argv[i]);
@@ -140,6 +141,8 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
+  controller.setEnableSendingDMX(true);
+
   // Random number generation setup
   std::random_device rd;
   std::mt19937 gen(rd());
@@ -152,25 +155,12 @@ int main(int argc, char *argv[]) {
       dmxData[i] = static_cast<uint8_t>(dis(gen));
     }
 
-    // Only show DMX values in debug mode
-    ArtNet::Logger::debug("DMX Values [showing first 32 channels]:");
-    if (ArtNet::Logger::getLevel() >= ArtNet::LogLevel::DEBUG) {
-      for (size_t i = 0; i < 32; i++) {
-        std::cout << std::setw(3) << static_cast<int>(dmxData[i]);
-        if ((i + 1) % 8 == 0) {
-          std::cout << std::endl; // TODO: Cout not! Use logger
-        } else {
-          std::cout << " ";
-        }
-      }
-      std::cout << "..." << std::endl;
-    }
-
     return dmxData;
   };
 
   // Set ArtNet callback
-  controller.registerDataCallback(myDataCallback);
+  // TODO: Rename to callbackDataDmx
+  // controller.registerDataCallback(myDataCallback);
 
   // Start ArtNet controller
   if (!controller.start(frameGenerator, ArtNet::ARTNET_FPS)) {
@@ -179,6 +169,7 @@ int main(int argc, char *argv[]) {
   }
 
   // TODO: Do not user logger in Example. Logger should be inside the lib?
+  // TODO: Get FPS from controller
   ArtNet::Logger::info("Controller running at ", ArtNet::ARTNET_FPS, " FPS. Press Ctrl+C to exit.");
 
   while (running) {
