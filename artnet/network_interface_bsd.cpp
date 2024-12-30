@@ -11,6 +11,8 @@
 namespace ArtNet {
 NetworkInterfaceBSD::NetworkInterfaceBSD() : m_recvBuffer(MAX_PACKET_SIZE) {}
 
+int NetworkInterfaceBSD::getSocket() const { return m_socket; }
+
 bool NetworkInterfaceBSD::createSocket(const std::string &bindAddress, int port) {
   m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   m_bindAddress = bindAddress;
@@ -19,6 +21,14 @@ bool NetworkInterfaceBSD::createSocket(const std::string &bindAddress, int port)
     Logger::error("Error creating socket");
     return false;
   }
+
+#ifdef SO_REUSEPORT
+  int enableReusePort = 1;
+  if (setsockopt(m_socket, SOL_SOCKET, SO_REUSEPORT, &enableReusePort, sizeof(int)) < 0) {
+    Logger::error("Failed to set socket to reuse port");
+    return false;
+  }
+#endif
 
   // Allow socket to reuse address
   int enable = 1;
@@ -40,20 +50,45 @@ bool NetworkInterfaceBSD::createSocket(const std::string &bindAddress, int port)
     return false;
   }
 
+  struct timeval tv;
+  tv.tv_sec = 0;       // Timeout in seconds
+  tv.tv_usec = 500000; // Timeout in microseconds (0.5 seconds)
+
+  if (setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) < 0) {
+    std::cerr << "ArtNet: Error setting socket timeout" << std::endl; // Or Logger::error in BSD
+    return false;
+  }
+
   // Set socket to non-blocking
-  int flags = fcntl(m_socket, F_GETFL, 0);
-  if (flags == -1) {
-    Logger::error("Error getting socket flags");
-    return false;
-  }
-  if (fcntl(m_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
-    Logger::error("Error setting socket to non-blocking");
-    return false;
-  }
+  // int flags = fcntl(m_socket, F_GETFL, 0);
+  // if (flags == -1) {
+  //   Logger::error("Error getting socket flags");
+  //   return false;
+  // }
+  // if (fcntl(m_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
+  //   Logger::error("Error setting socket to non-blocking");
+  //   return false;
+  // }
+
   return true;
 }
 
 bool NetworkInterfaceBSD::bindSocket() {
+  // Check port is in use
+  sockaddr_in check_addr;
+  check_addr.sin_family = AF_INET;
+  check_addr.sin_port = htons(m_port);
+  check_addr.sin_addr.s_addr = INADDR_ANY;
+
+  int check_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (bind(check_socket, (struct sockaddr *)&check_addr, sizeof(check_addr)) == 0) {
+    close(check_socket); // Port is free
+  } else {
+    close(check_socket);
+    Logger::info("Port already in use, but continuing due to SO_REUSEADDR");
+  }
+
+  // Binding
   sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_port = htons(m_port);
@@ -118,6 +153,7 @@ int NetworkInterfaceBSD::receivePacket(std::vector<uint8_t> &buffer) {
 
   return static_cast<int>(bytesReceived);
 }
+
 void NetworkInterfaceBSD::closeSocket() {
   if (m_socket != -1) {
     close(m_socket);

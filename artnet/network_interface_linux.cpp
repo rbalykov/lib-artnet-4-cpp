@@ -11,6 +11,8 @@
 namespace ArtNet {
 NetworkInterfaceLinux::NetworkInterfaceLinux() : m_recvBuffer(MAX_PACKET_SIZE) {}
 
+int NetworkInterfaceLinux::getSocket() const { return m_socket; }
+
 bool NetworkInterfaceLinux::createSocket(const std::string &bindAddress, int port) {
   m_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   m_bindAddress = bindAddress;
@@ -41,16 +43,25 @@ bool NetworkInterfaceLinux::createSocket(const std::string &bindAddress, int por
     return false;
   }
 
+  struct timeval tv;
+  tv.tv_sec = 0;       // Timeout in seconds
+  tv.tv_usec = 500000; // Timeout in microseconds (0.5 seconds)
+
+  if (setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof tv) < 0) {
+    std::cerr << "ArtNet: Error setting socket timeout" << std::endl; // Or Logger::error in BSD
+    return false;
+  }
   // Set socket to non-blocking
-  int flags = fcntl(m_socket, F_GETFL, 0);
-  if (flags == -1) {
-    std::cerr << "ArtNet: Error getting socket flags" << std::endl;
-    return false;
-  }
-  if (fcntl(m_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
-    std::cerr << "ArtNet: Error setting socket to non-blocking" << std::endl;
-    return false;
-  }
+  // int flags = fcntl(m_socket, F_GETFL, 0);
+  // if (flags == -1) {
+  //   std::cerr << "ArtNet: Error getting socket flags" << std::endl;
+  //   return false;
+  // }
+  // if (fcntl(m_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
+  //   std::cerr << "ArtNet: Error setting socket to non-blocking" << std::endl;
+  //   return false;
+  // }
+
   return true;
 }
 

@@ -3,8 +3,8 @@
 #include <arpa/inet.h>
 #include <array>
 #include <cstdint>
-#include <string>
-#include <vector>
+// #include <string>
+// #include <vector>
 
 namespace ArtNet {
 
@@ -15,6 +15,7 @@ constexpr uint16_t ARTNET_HEADER_SIZE = 12;
 constexpr uint16_t ARTNET_MAX_DMX_SIZE = 512;
 
 // Op Codes (from spec table 1)
+#pragma pack(push, 1) // Disable padding.
 enum class OpCode : uint16_t {
   OpPoll = 0x2000,
   OpPollReply = 0x2100,
@@ -55,12 +56,14 @@ enum class OpCode : uint16_t {
   // OpDirectory = 0x9a00,
   // OpDirectoryReply = 0x9b00
 };
+#pragma pack(pop) // Restore default alignment.
 
 // Common Header
+#pragma pack(push, 1) // Disable padding.
 struct ArtHeader {
   std::array<uint8_t, 8> id; // "Art-Net\0"
   uint16_t opcode;           // OpDmx = 0x5000, low byte first
-  uint16_t version;          // Protocol version, high byte first
+  // uint16_t version;          // Protocol version, high byte first
 
   explicit ArtHeader(OpCode code) {
     // Initialize with "Art-Net\0"
@@ -70,7 +73,7 @@ struct ArtHeader {
 
     // Set initial values
     setOpcode(code);
-    setVersion(14); // Art-Net protocol version 14
+    // setVersion(14); // Art-Net protocol version 14
   }
 
   void setOpcode(OpCode code) {
@@ -78,30 +81,46 @@ struct ArtHeader {
     opcode = static_cast<uint16_t>(code); // Already in little-endian on x86/ARM
   }
 
-  void setVersion(uint16_t versionNumber) {
-    // Version must be big-endian per spec
-    version = htons(versionNumber);
-  }
+  // void setVersion(uint16_t versionNumber) {
+  //   // Version must be big-endian per spec
+  //   version = htons(versionNumber);
+  // }
 };
+#pragma pack(pop) // Restore default alignment.
 
 // ArtPoll Packet (from spec section 6.2)
+#pragma pack(push, 1) // Disable padding.
 struct ArtPollPacket {
   ArtHeader header;
-  uint16_t filler1;
-  uint32_t filler2;
+  uint8_t versionHi;  // Protocol version, high byte first
+  uint8_t versionLow; // Protocol version, low byte last
+  uint8_t flags;
+  uint8_t diagPriority;
+  uint8_t targetPortAddressTopHi;
+  uint8_t targetPortAddressTopLo;
+  uint8_t targetPortAddressBottomHi;
+  uint8_t targetPortAddressBottomLo;
+  uint8_t estaManHi;
+  uint8_t estaManLo;
+  uint8_t oemHi;
+  uint8_t oemLo;
+
   std::array<uint8_t, 4> versionInfo;
 
   ArtPollPacket()
-      : header(OpCode::OpPoll), filler1(0), filler2(0),
-        versionInfo{0, 0, 0, 0} {}
+      : header(OpCode::OpPoll), versionHi(0), versionLow(14), flags(0), diagPriority(0), targetPortAddressTopHi(0),
+        targetPortAddressTopLo(0), targetPortAddressBottomHi(0), targetPortAddressBottomLo(0), estaManHi(0), estaManLo(0), oemHi(0),
+        oemLo(0), versionInfo{0, 0, 0, 0} {}
 };
+#pragma pack(pop) // Restore default alignment.
 
 // ArtPollReply Packet (from spec section 6.3)
+#pragma pack(push, 1) // Ensure proper packing
 struct ArtPollReplyPacket {
   ArtHeader header;
-  std::array<uint8_t, 4> ip;
+  uint8_t ip[4];
   uint16_t port;
-  std::array<uint8_t, 2> versionInfo;
+  uint8_t versionInfo[2];
   uint8_t netSwitch;
   uint8_t subSwitch;
   uint16_t oem;
@@ -113,19 +132,32 @@ struct ArtPollReplyPacket {
   std::array<uint8_t, 64> nodeReport;
   uint16_t numPorts;
   std::array<uint8_t, 4> portType;
-  std::array<uint8_t, 4> goodOutputA;
   std::array<uint8_t, 4> goodInputA;
+  std::array<uint8_t, 4> goodOutputA;
   std::array<uint8_t, 4> swIn;
   std::array<uint8_t, 4> swOut;
   std::array<uint8_t, 4> acnPriority;
   std::array<uint8_t, 4> swMacro;
   std::array<uint8_t, 4> swRemote;
-  std::array<uint8_t, 3> filler3;
+  uint8_t style;
+  std::array<uint8_t, 6> mac;
+  uint8_t bindIp[4];
+  uint8_t bindIndex;
+  uint8_t status2;
+  std::array<uint8_t, 4> goodOutputB;
+  uint8_t status3;
+  std::array<uint8_t, 6> defaultResponder;
+  uint16_t userHi;
+  uint16_t userLo;
+  uint16_t refreshRateHi;
+  uint16_t refreshRateLo;
+  uint8_t backgroundQueuePolicy;
+  std::array<uint8_t, 10> filler; // This is field 54 (optional)
 
   ArtPollReplyPacket()
-      : header(OpCode::OpPollReply), port(ARTNET_PORT), versionInfo{0, 0},
-        netSwitch(0), subSwitch(0), oem(0), ubeaVersion(0), status(0),
-        estaMan(0), numPorts(0), filler3{0, 0, 0} {
+      : header(OpCode::OpPollReply), ip{0}, port(ARTNET_PORT), versionInfo{0, 0}, netSwitch(0), subSwitch(0), oem(0), ubeaVersion(0),
+        status(0), estaMan(0), numPorts(0), style(0), mac{0}, bindIp{0}, bindIndex(0), status2(0), goodOutputB{0}, status3(0),
+        defaultResponder{0}, userHi(0), userLo(0), refreshRateHi(0), refreshRateLo(0), backgroundQueuePolicy(0), filler{0} {
     shortName.fill(0);
     longName.fill(0);
     nodeReport.fill(0);
@@ -139,11 +171,13 @@ struct ArtPollReplyPacket {
     swRemote.fill(0);
   }
 };
-
+#pragma pack(pop) // Restore default alignment.
+//
 // ArtDmx Packet (from spec section 7.2)
-#pragma pack(push, 1) // Ensure proper packing (if not already present)
+#pragma pack(push, 1) // Ensure proper packing
 struct ArtDmxPacket {
   ArtHeader header;
+  uint16_t version;  // Protocol version, high byte first
   uint8_t sequence;  // DMX sequence number
   uint8_t physical;  // Physical port
   uint16_t universe; // Universe (network byte order)
@@ -151,17 +185,21 @@ struct ArtDmxPacket {
   uint8_t data[512]; // DMX data (maximum 512 bytes)
 
   // Constructor to initialize the fields
-  ArtDmxPacket() : header(OpCode::OpDmx) {
+  explicit ArtDmxPacket() : header(OpCode::OpDmx) {
+    version = htons(14); // Art-Net protocol version 14
+
     sequence = 0;
     physical = 0;
     universe = 0;
     length = 0;
+
     std::memset(data, 0, sizeof(data)); // Initialize data to zero
   }
 };
 #pragma pack(pop) // Restore default packing (if not already present)
 
 // More packet definitions will follow, here is an example:
+#pragma pack(push, 1) // Ensure proper packing
 struct ArtTodDataPacket {
   ArtHeader header;
   uint8_t rdmVer;
@@ -184,4 +222,5 @@ struct ArtTodDataPacket {
 
   ArtTodDataPacket();
 };
+#pragma pack(pop) // Restore default packing (if not already present)
 } // namespace ArtNet
