@@ -80,6 +80,7 @@ int main() {
     }
 
     // Send DMX data
+    controller.setEnableSendingDMX(true);
     controller.setDmxData(0, dmxData);
     controller.sendDmx();
 
