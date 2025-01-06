@@ -3,7 +3,7 @@
 #include <arpa/inet.h>
 #include <array>
 #include <cstdint>
-// #include <string>
+#include <cstring>
 // #include <vector>
 
 namespace ArtNet
