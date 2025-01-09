@@ -167,3 +167,4 @@ Copyright © 2024
 
 - Based on the official [Art-Net 4 Protocol Specification](https://artisticlicence.com/WebSiteMaster/User%20Guides/art-net.pdf)
 - Thanks to Artistic Licence for creating and maintaining the Art-Net protocol
+  
